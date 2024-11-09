@@ -4,13 +4,15 @@ import sqlite3
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)  # Enable cross-origin requests
+CORS(app)
 
 DB_PATH = 'pantrybot.db'
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=NORMAL')
     return conn
 
 @app.route('/grocery/items', methods=['GET'])
@@ -36,15 +38,19 @@ def add_item():
 
 @app.route('/grocery/items/<int:item_id>', methods=['PUT'])
 def toggle_item(item_id):
-    data = request.json
-    conn = get_db()
-    conn.execute(
-        'UPDATE grocery_items SET checked = ? WHERE id = ?',
-        (data['checked'], item_id)
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({'success': True})
+    try:
+        data = request.json
+        conn = get_db()
+        conn.execute(
+            'UPDATE grocery_items SET checked = ? WHERE id = ?',
+            (data['checked'], item_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/grocery/items/<int:item_id>', methods=['DELETE'])
 def delete_item(item_id):

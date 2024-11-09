@@ -48,81 +48,20 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
     def __init__(self):
         super().__init__()
         self.title("Pantry Bot")
-        # Launch Onboard without blocking the execution
-        self.launch_onboard()
-        self.virtual_keyboard_widgets = []
-
-        # Detect platform to apply maximize function appropriately
-        current_os = platform.system()
-
-        if current_os == 'Windows':
-            self.wm_state('zoomed')  # Windows maximize
-        elif current_os == 'Linux':  # This should cover Raspberry Pi OS
-            self.attributes('-zoomed', True)  # Linux maximize
-        else:
-            self.geometry("{0}x{1}+0+0".format(self.winfo_screenwidth(), self.winfo_screenheight()))  # For other OS
-
+        
+        # Get screen dimensions
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        
+        # Set window size to slightly smaller than screen
+        self.geometry(f"{screen_width}x{screen_height-30}")  # -30 to show top bar
+        
         # Container to hold all widgets
         self.container = tk.Frame(self)
         self.container.pack(fill=tk.BOTH, expand=True)
-
-        # Start with the main menu
+        
+        # Start with main menu
         self.show_main_menu()
-
-    def launch_onboard(self):
-        """Launch Onboard if not already running and hide it initially."""
-        onboard_process = subprocess.run(["pgrep", "onboard"], stdout=subprocess.PIPE)
-        if not onboard_process.stdout:
-            # Launch Onboard
-            subprocess.Popen(["onboard"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.hide_onboard()  # Ensure it's hidden initially
-
-    def show_onboard(self, event=None):
-        """Show the Onboard virtual keyboard using D-Bus."""
-        print("Showing Onboard virtual keyboard")
-        try:
-            bus = dbus.SessionBus()
-            onboard_service = bus.get_object('org.onboard.Onboard', '/org/onboard/Onboard/Keyboard')
-            onboard_interface = dbus.Interface(onboard_service, 'org.onboard.Onboard.Keyboard')
-            onboard_interface.Show()
-            print("Onboard is now visible.")
-        except Exception as e:
-            print(f"Error showing Onboard: {e}")
-
-    def hide_onboard(self, event=None):
-        """Hide the Onboard virtual keyboard using D-Bus."""
-        print("Hiding Onboard virtual keyboard")
-        try:
-            bus = dbus.SessionBus()
-            onboard_service = bus.get_object('org.onboard.Onboard', '/org/onboard/Onboard/Keyboard')
-            onboard_interface = dbus.Interface(onboard_service, 'org.onboard.Onboard.Keyboard')
-            onboard_interface.Hide()
-            print("Onboard is now hidden.")
-        except Exception as e:
-            print(f"Error hiding Onboard: {e}")
-
-    def bind_widgets(self, widgets):
-        """Bind specific widgets to show/hide the virtual keyboard."""
-        self.virtual_keyboard_widgets = widgets  # Keep track of widgets that should trigger the keyboard
-        for widget in widgets:
-            if isinstance(widget, tk.Entry):
-                widget.bind("<FocusIn>", self.show_onboard)   # Show on focus
-                widget.bind("<FocusOut>", self.hide_onboard)  # Hide when unfocused
-                widget.bind("<Return>", self.hide_onboard)    # Hide on Enter key
-
-        # Bind any clicks outside of text fields to hide the keyboard
-        self.bind_all("<Button-1>", self.check_focus_click)
-
-
-    def check_focus_click(self, event):
-        """Check whether the clicked widget is an Entry field that should trigger the virtual keyboard."""
-        widget = event.widget
-
-        if isinstance(widget, tk.Entry) and widget in self.virtual_keyboard_widgets:
-            self.show_onboard()  # If it's an Entry that should show the keyboard, show it
-        else:
-            self.hide_onboard()  # If it's anything else, hide the keyboard
-
 
     def show_main_menu(self):
         # Clear the existing content
@@ -184,9 +123,6 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         self.search_entry = tk.Entry(self.search_frame, font=('Arial', 14), width=400)
         self.search_entry.pack(side=tk.LEFT, padx=5)
 
-        # Bind only the search_entry widget
-        self.bind_widgets([self.search_entry])
-
         search_button = tk.Button(self.search_frame, text="Search", font=('Arial', 14), command=lambda: self.search_items(self.search_entry.get()))
         search_button.pack(side=tk.LEFT, padx=5)
 
@@ -195,11 +131,11 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         self.control_frame.pack(pady=20)
 
         # Add the "Add Item" button and hide the keyboard when pressed
-        add_button = tk.Button(self.control_frame, text="Add Item", font=('Arial', 16), command=lambda: [self.hide_onboard(), self.show_item_form_for_adding()])
+        add_button = tk.Button(self.control_frame, text="Add Item", font=('Arial', 16), command=lambda: [self.show_item_form_for_adding()])
         add_button.pack(side=tk.LEFT, padx=10)
 
         # Add the "Back to Main Menu" button and hide the keyboard when pressed
-        back_button = tk.Button(self.control_frame, text="Back to Main Menu", font=('Arial', 16), command=lambda: [self.hide_onboard(), self.show_main_menu()])
+        back_button = tk.Button(self.control_frame, text="Back to Main Menu", font=('Arial', 16), command=self.show_main_menu)
         back_button.pack(side=tk.LEFT, padx=10)
 
         # Center the control frame
@@ -212,7 +148,6 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
 
         # Populate the items into the display frame
         self.populate_items()
-        self.bind_widgets([self.search_entry])
 
     def populate_items(self):
         # Clear the items_display_frame
@@ -376,9 +311,6 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         cancel_button = tk.Button(button_frame, text="Cancel", font=('Arial', 14), command=self.show_items)
         cancel_button.pack(side=tk.LEFT, padx=10)
 
-        # Bind only the name and quantity entries to trigger the virtual keyboard
-        self.bind_widgets([self.name_entry])
-
     def save_item_changes(self, item_id):
         name = self.name_entry.get()
         type_ = self.type_entry.get()
@@ -457,9 +389,6 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         cancel_button = tk.Button(button_frame, text="Cancel", font=('Arial', 14), command=self.show_items)
         cancel_button.pack(side=tk.LEFT, padx=10)
 
-        # Bind only the name and quantity entries to trigger the virtual keyboard
-        self.bind_widgets([self.name_entry])
-
     def increment_quantity(self):
         current_quantity = self.quantity_var.get()
         self.quantity_var.set(current_quantity + 1)
@@ -510,96 +439,72 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         search_label = tk.Label(self.search_frame, text="Search:", font=('Arial', 14))
         search_label.pack(side=tk.LEFT, padx=5)
 
-        self.search_entry = tk.Entry(self.search_frame, font=('Arial', 14), width=400)
+        self.search_entry = tk.Entry(self.search_frame, font=('Arial', 14))
         self.search_entry.pack(side=tk.LEFT, padx=5)
 
-        # Bind only the search_entry widget
-        self.bind_widgets([self.search_entry])
-
-
-        search_button = tk.Button(self.search_frame, text="Search", font=('Arial', 14), command=lambda: self.search_recipes(self.search_entry.get()))
+        search_button = tk.Button(self.search_frame, text="Search", font=('Arial', 14),
+                             command=lambda: self.search_recipes(self.search_entry.get()))
         search_button.pack(side=tk.LEFT, padx=5)
 
-        # Frame for control buttons at the bottom, centered
+        # Frame for control buttons
         self.control_frame = tk.Frame(self.container)
         self.control_frame.pack(pady=20)
 
-        add_button = tk.Button(self.control_frame, text="Add Recipe", font=('Arial', 16), command=self.show_recipe_form_for_adding)
+        add_button = tk.Button(self.control_frame, text="Add Recipe", font=('Arial', 16),
+                          command=lambda: [self.show_recipe_form_for_adding()])
         add_button.pack(side=tk.LEFT, padx=10)
 
-        back_button = tk.Button(self.control_frame, text="Back to Main Menu", font=('Arial', 16), command=self.show_main_menu)
+        back_button = tk.Button(self.control_frame, text="Back to Main Menu", font=('Arial', 16),
+                           command=self.show_main_menu)
         back_button.pack(side=tk.LEFT, padx=10)
-
-        # Center the control frame
-        self.control_frame.pack(anchor=tk.CENTER)
 
         # Add scrollable frame for menus
         scrollable_frame = tk.Frame(self.container)
         scrollable_frame.pack(fill=tk.BOTH, expand=True)
         self.menus_display_frame = self.add_scrollbar_to_frame(scrollable_frame)
 
-        # Populate the menu initially (show all recipes)
-        self.populate_menu()
-        self.bind_widgets([self.search_entry])
+        # Populate the menus
+        self.populate_menus()
 
-    def populate_menu(self):
-        # Clear the menus_display_frame
-        for widget in self.menus_display_frame.winfo_children():
-            widget.destroy()
-
-        recipes_per_row = 3  # Set to 3 items per row
+    def populate_menus(self):
+        menus_per_row = 3  # Set to 3 menus per row
         row = 0
         col = 0
-
+        
         cursor.execute("SELECT * FROM recipes ORDER BY title ASC")
-        recipes = cursor.fetchall()
-
-        # Configure the columns to stretch equally
-        for i in range(recipes_per_row + 2):  # Include the extra columns for centering
+        menus = cursor.fetchall()
+        
+        # Configure grid columns
+        for i in range(menus_per_row):
             self.menus_display_frame.grid_columnconfigure(i, weight=1)
+        
+        for menu in menus:
+            menu_frame = tk.Frame(self.menus_display_frame)
+            menu_frame.grid(row=row, column=col, padx=20, pady=20, sticky="nsew")
 
-        for recipe in recipes:
-            # Replace tk.Frame with tk.Frame
-            recipe_frame = tk.Frame(self.menus_display_frame)
-            recipe_frame.grid(row=row, column=col + 1, padx=20, pady=20, sticky="ew")  # Add column offset (+1) for centering
+            title = tk.Label(menu_frame, text=menu[1], font=('Arial', 16, 'bold'))
+            title.pack(anchor='w')
 
-            # Replace tk.Label with tk.Label
-            recipe_title = tk.Label(recipe_frame, text=recipe[1], font=('Arial', 14, 'bold'))
-            recipe_title.pack(pady=5)
+            details = tk.Label(menu_frame, 
+                              text=f"By: {menu[2]}\nPrep: {menu[4]} min | Cook: {menu[5]} min\n{menu[3]}", 
+                              font=('Arial', 12))
+            details.pack(anchor='w')
 
-            recipe_author = tk.Label(recipe_frame, text=f"Author: {recipe[2]}", font=('Arial', 12))
-            recipe_author.pack(pady=5)
+            button_frame = tk.Frame(menu_frame)
+            button_frame.pack(fill=tk.X, pady=5)
 
-            recipe_description = tk.Label(recipe_frame, text=f"Description: {recipe[3]}", font=('Arial', 12), wraplength=200)
-            recipe_description.pack(pady=5)
+            edit_btn = tk.Button(button_frame, text="Edit", 
+                                command=lambda r=menu: self.show_recipe_form_for_editing(r))
+            edit_btn.pack(side=tk.LEFT, padx=5)
 
-            recipe_times = tk.Label(recipe_frame, text=f"Prep Time: {recipe[4]} mins\nCook Time: {recipe[5]} mins", font=('Arial', 12))
-            recipe_times.pack(pady=5)
-
-            # Buttons should use tk.Button
-            button_frame = tk.Frame(recipe_frame)
-            button_frame.pack(pady=5)
-
-            edit_button = tk.Button(button_frame, text="Edit", command=lambda r=recipe: self.show_recipe_form_for_editing(r))
-            edit_button.pack(side=tk.LEFT, padx=5)
-
-            view_button = tk.Button(button_frame, text="View", command=lambda r=recipe: self.view_recipe(r))
-            view_button.pack(side=tk.LEFT, padx=5)
-
-            delete_button = tk.Button(button_frame, text="Delete", command=lambda r=recipe: self.confirm_delete_recipe(r))
-            delete_button.pack(side=tk.LEFT, padx=5)
-
+            delete_btn = tk.Button(button_frame, text="Delete", 
+                                   command=lambda r=menu: self.confirm_delete_recipe(r))
+            delete_btn.pack(side=tk.LEFT, padx=5)
+            
             col += 1
-            if col >= recipes_per_row:
+            if col >= menus_per_row:
                 col = 0
                 row += 1
-
-        # Add an empty column at the end to ensure it's centered
-        self.menus_display_frame.grid_columnconfigure(recipes_per_row + 1, weight=1)
-
-        # Ensure all rows are adaptive
-        for i in range(row + 1):
-            self.menus_display_frame.grid_rowconfigure(i, weight=1)
 
     def search_recipes(self, search_term):
         for widget in self.menus_display_frame.winfo_children():
@@ -871,9 +776,13 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         title = tk.Label(self.container, text="Grocery List", font=('Arial', 24))
         title.pack(pady=20)
 
+        # Top controls frame (input and back button)
+        top_frame = tk.Frame(self.container)
+        top_frame.pack(fill=tk.X, padx=20, pady=10)
+
         # Input area
-        input_frame = tk.Frame(self.container)
-        input_frame.pack(fill=tk.X, padx=20, pady=10)
+        input_frame = tk.Frame(top_frame)
+        input_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
 
         self.grocery_entry = tk.Entry(input_frame, font=('Arial', 14))
         self.grocery_entry.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10))
@@ -882,44 +791,81 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
                            command=self.add_grocery_item)
         add_btn.pack(side=tk.LEFT)
 
-        # Bind virtual keyboard
-        self.bind_widgets([self.grocery_entry])
-
-        # List area
-        list_frame = tk.Frame(self.container)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
-
-        # Create scrollable frame
-        self.grocery_list = tk.Frame(list_frame)
-        self.grocery_list.pack(fill=tk.BOTH, expand=True)
-
-        # Back button
-        back_btn = tk.Button(self.container, text="Back to Main Menu",
+        # Back button in top frame
+        back_btn = tk.Button(top_frame, text="Back to Main Menu",
                            font=('Arial', 16), command=self.show_main_menu)
-        back_btn.pack(pady=20)
+        back_btn.pack(side=tk.RIGHT, padx=10)
 
-        # Load existing items
-        self.populate_grocery_items()
+        # Search and filter frame
+        search_frame = tk.Frame(self.container)
+        search_frame.pack(fill=tk.X, padx=20, pady=10)
 
-    def add_grocery_item(self):
-        name = self.grocery_entry.get().strip()
-        if name:
+        # Search bar
+        search_label = tk.Label(search_frame, text="Search:", font=('Arial', 14))
+        search_label.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.grocery_search = tk.Entry(search_frame, font=('Arial', 14))
+        self.grocery_search.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10))
+        
+        # Filter dropdown
+        filter_label = tk.Label(search_frame, text="Sort by:", font=('Arial', 14))
+        filter_label.pack(side=tk.LEFT, padx=(10, 5))
+
+        self.filter_var = tk.StringVar(value="A to Z")
+        filter_options = [
+            "Unchecked",
+            "A to Z",
+            "Z to A",
+            "First added",
+            "Last added"
+        ]
+        filter_menu = ttk.Combobox(search_frame, 
+                                  textvariable=self.filter_var,
+                                  values=filter_options,
+                                  state='readonly',
+                                  font=('Arial', 14))
+        filter_menu.pack(side=tk.LEFT, padx=5)
+
+        self.grocery_search.bind('<KeyRelease>', lambda e: self.filter_grocery_items())
+        filter_menu.bind('<<ComboboxSelected>>', lambda e: self.filter_grocery_items())
+
+        # Add scrollable frame for grocery list
+        scrollable_frame = tk.Frame(self.container)
+        scrollable_frame.pack(fill=tk.BOTH, expand=True)
+        self.grocery_list = self.add_scrollbar_to_frame(scrollable_frame)
+
+        # Initialize the filter to show all items
+        self.filter_grocery_items()
+
+    def filter_grocery_items(self):
+        """Filter and sort grocery items based on search text and selected filter."""
+        search_text = self.grocery_search.get().lower()
+        filter_option = self.filter_var.get()
+
+        # Get all items from database
+        if filter_option == "Unchecked":
             cursor.execute("""
-                INSERT INTO grocery_items (name, checked, created_at)
-                VALUES (?, 0, ?)
-            """, (name, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            conn.commit()
-            self.grocery_entry.delete(0, tk.END)
-            self.populate_grocery_items()
+                SELECT * FROM grocery_items 
+                ORDER BY checked ASC, name ASC
+            """)
+        elif filter_option == "A to Z":
+            cursor.execute("SELECT * FROM grocery_items ORDER BY name ASC")
+        elif filter_option == "Z to A":
+            cursor.execute("SELECT * FROM grocery_items ORDER BY name DESC")
+        elif filter_option == "First added":
+            cursor.execute("SELECT * FROM grocery_items ORDER BY created_at ASC")
+        else:  # Last added
+            cursor.execute("SELECT * FROM grocery_items ORDER BY created_at DESC")
 
-    def populate_grocery_items(self):
+        items = cursor.fetchall()
+
+        # Filter based on search text
+        if search_text:
+            items = [item for item in items if search_text in item[1].lower()]
+
         # Clear existing items
         for widget in self.grocery_list.winfo_children():
             widget.destroy()
-
-        # Get all items
-        cursor.execute("SELECT * FROM grocery_items ORDER BY created_at DESC")
-        items = cursor.fetchall()
 
         # Store references to labels
         self.item_labels = {}
@@ -928,7 +874,7 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         for item in items:
             # Create frame for each item
             item_frame = tk.Frame(self.grocery_list)
-            item_frame.pack(fill=tk.X, pady=5)
+            item_frame.pack(fill=tk.X, pady=5, padx=10)
 
             # Checkbox
             var = tk.BooleanVar(value=bool(item[2]))
@@ -945,10 +891,10 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
             # Store reference to the label
             self.item_labels[item[0]] = text
 
-            # Delete button - now right after the text
+            # Delete button
             delete = tk.Button(item_frame, text="×", font=('Arial', 14),
                              command=lambda i=item[0]: self.delete_grocery_item(i))
-            delete.pack(side=tk.LEFT, padx=5)  # Changed from RIGHT to LEFT
+            delete.pack(side=tk.RIGHT, padx=5)
 
     def toggle_grocery_item_display(self, item_id, var):
         # Update database
@@ -964,7 +910,18 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
     def delete_grocery_item(self, item_id):
         cursor.execute("DELETE FROM grocery_items WHERE id = ?", (item_id,))
         conn.commit()
-        self.populate_grocery_items()
+        self.filter_grocery_items()
+
+    def add_grocery_item(self):
+        name = self.grocery_entry.get().strip()
+        if name:
+            cursor.execute("""
+                INSERT INTO grocery_items (name, checked, created_at)
+                VALUES (?, 0, ?)
+            """, (name, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
+            self.grocery_entry.delete(0, tk.END)
+            self.populate_grocery_items()
 
     def shutdown(self):
         os.system("sudo shutdown now")
@@ -973,12 +930,50 @@ class FridgeManagerApp(tk.Tk):  # Use tk instead of Tk
         os.system("sudo reboot")
 
     def sleep(self):
-        """Turn off the display without suspending the system."""
+        """Turn off the official Raspberry Pi touchscreen display."""
         try:
-            os.system("xset dpms force off")  # Turns off the display
-            print("Display turned off.")
+            # First try to find the correct backlight directory
+            backlight_dirs = os.listdir('/sys/class/backlight/')
+            if not backlight_dirs:
+                raise Exception("No backlight control found")
+            
+            backlight_dir = backlight_dirs[0]  # Use the first (and usually only) backlight directory
+            bl_power_path = f"/sys/class/backlight/{backlight_dir}/bl_power"
+            
+            # Turn off the backlight power (1 = off, 0 = on)
+            os.system(f"sudo sh -c 'echo 1 > {bl_power_path}'")
+            
+            # Bind screen tap event to wake up
+            self.bind("<Button-1>", lambda e: self.wake_up())
+            # Bind keyboard event to wake up
+            self.bind("<Key>", lambda e: self.wake_up())
+            
         except Exception as e:
             print(f"Failed to turn off display: {e}")
+            messagebox.showerror("Error", f"Failed to turn off display: {e}")
+
+    def wake_up(self):
+        """Turn the display back on and return to main menu."""
+        try:
+            # Find the backlight directory again
+            backlight_dirs = os.listdir('/sys/class/backlight/')
+            if backlight_dirs:
+                backlight_dir = backlight_dirs[0]
+                bl_power_path = f"/sys/class/backlight/{backlight_dir}/bl_power"
+                
+                # Turn the backlight power back on (0 = on)
+                os.system(f"sudo sh -c 'echo 0 > {bl_power_path}'")
+            
+            # Unbind the wake-up events
+            self.unbind("<Button-1>")
+            self.unbind("<Key>")
+            
+            # Return to main menu
+            self.show_main_menu()
+            
+        except Exception as e:
+            print(f"Failed to wake up display: {e}")
+            messagebox.showerror("Error", f"Failed to wake up display: {e}")
 
 if __name__ == "__main__":
     app = FridgeManagerApp()

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTraffic="true">
+    <domain-config cleartextTraffic="true">
+        <domain includeSubdomains="true">pantrybot.anonstorage.org</domain>
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />
         </trust-anchors>
-    </base-config>
+    </domain-config>
 </network-security-config>
