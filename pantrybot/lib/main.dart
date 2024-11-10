@@ -395,39 +395,6 @@ class _PantryListState extends State<PantryList> {
     }
   }
 
-  List<Map<String, dynamic>> _getFilteredItems() {
-    if (_filterOption == FilterOption.category && _selectedCategory != null) {
-      // Cast the lists to the correct type
-      var categoryItems = items
-          .where((item) => item['category'] == _selectedCategory)
-          .map((item) => item as Map<String, dynamic>)
-          .toList();
-      
-      var otherItems = items
-          .where((item) => item['category'] != _selectedCategory)
-          .map((item) => item as Map<String, dynamic>)
-          .toList();
-      
-      return [...categoryItems, ...otherItems];
-    }
-    
-    return items
-        .where((item) {
-          switch (_filterOption) {
-            case FilterOption.all:
-              return true;
-            case FilterOption.checked:
-              return item['checked'] == 1;
-            case FilterOption.unchecked:
-              return item['checked'] == 0;
-            default:
-              return true;
-          }
-        })
-        .map((item) => item as Map<String, dynamic>)
-        .toList();
-  }
-
   void _showCategoryFilterDialog() {
     showDialog(
       context: context,
@@ -438,21 +405,83 @@ class _PantryListState extends State<PantryList> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                'Vegetables', 'Fruits', 'Dairy', 'Meats', 
-                'Grains', 'Sweets', 'Oils', 'Electronics', 
-                'Drinks', 'Medicine', 'Cleaning', 'Other'
-              ].map((category) => ListTile(
-                title: Text(category),
-                onTap: () {
-                  setState(() => _selectedCategory = category);
-                  Navigator.of(context).pop();
-                },
-              )).toList(),
+                ListTile(
+                  title: Text('All Categories'),
+                  onTap: () {
+                    setState(() {
+                      _selectedCategory = null;
+                      _currentSort = SortOption.newest;  // Reset to default sort
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+                Divider(),
+                ...[
+                  'Vegetables', 'Fruits', 'Dairy', 'Meats', 
+                  'Grains', 'Sweets', 'Oils', 'Electronics', 
+                  'Drinks', 'Medicine', 'Cleaning', 'Other'
+                ].map((category) => ListTile(
+                  title: Text(category),
+                  onTap: () {
+                    setState(() {
+                      _selectedCategory = category;
+                      _currentSort = SortOption.newest;  // Reset to default sort
+                    });
+                    Navigator.of(context).pop();
+                  },
+                )).toList(),
+              ],
             ),
           ),
         );
       },
     );
+  }
+
+  List<Map<String, dynamic>> _getFilteredItems() {
+    var allItems = items.map((item) => item as Map<String, dynamic>).toList();
+    
+    // If a category is selected, split and reorder the items
+    if (_selectedCategory != null) {
+      var categoryItems = allItems.where((item) => 
+        item['category'] == _selectedCategory).toList();
+      var otherItems = allItems.where((item) => 
+        item['category'] != _selectedCategory).toList();
+      
+      // Sort each group separately
+      _applySorting(categoryItems);
+      _applySorting(otherItems);
+      
+      // Combine with selected category items at the top
+      return [...categoryItems, ...otherItems];
+    }
+    
+    // If no category selected, just sort all items
+    _applySorting(allItems);
+    return allItems;
+  }
+
+  void _applySorting(List<Map<String, dynamic>> items) {
+    switch (_currentSort) {
+      case SortOption.unchecked:
+        items.sort((a, b) => (a['checked'] as int).compareTo(b['checked'] as int));
+        break;
+      case SortOption.aToZ:
+        items.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+        break;
+      case SortOption.zToA:
+        items.sort((a, b) => (b['name'] as String).compareTo(a['name'] as String));
+        break;
+      case SortOption.oldest:
+        items.sort((a, b) => (a['created_at'] as String).compareTo(b['created_at'] as String));
+        break;
+      case SortOption.newest:
+        items.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+        break;
+      case SortOption.category:
+        items.sort((a, b) => (a['category'] as String).compareTo(b['category'] as String));
+        break;
+    }
   }
 
   @override
