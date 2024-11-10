@@ -1,3 +1,9 @@
 flutter_launcher_icons:
+  android: "ic_launcher"
   ios: true
-  image_path: '../pantrybot_logo.png'
+  image_path: 'assets/icon.png'
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: 'assets/icon.png'
+  adaptive_icon_padding_scale: 0.0  # No additional padding since icon has its own
+  remove_alpha_ios: true
+  remove_alpha_android: false  # Keep the transparency for better edge rendering

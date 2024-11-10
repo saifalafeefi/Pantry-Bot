@@ -37,8 +37,10 @@ cursor.execute('''
 CREATE TABLE IF NOT EXISTS grocery_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    quantity INTEGER DEFAULT 1,
+    category TEXT DEFAULT 'Vegetables',
     checked INTEGER DEFAULT 0,
-    created_at TEXT NOT NULL
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 ''')
 

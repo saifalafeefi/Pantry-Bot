@@ -37,7 +37,35 @@ enum SortOption {
   zToA,
   oldest,
   newest,
+  category,
 }
+
+enum ItemCategory {
+  Vegetables,
+  Fruits,
+  Dairy,
+  Meats,
+  Grains,
+  Sweets,
+  Oils,
+  Electronics,
+  Drinks,
+  Medicine,
+  Cleaning,
+  Other,
+}
+
+enum FilterOption { all, checked, unchecked, category }
+
+final categoryColors = {
+  ItemCategory.Vegetables: Color(0xFFE8F5E9),  // Light green
+  ItemCategory.Fruits: Color(0xFFC8E6C9),      // Slightly darker green
+  ItemCategory.Dairy: Color(0xFFE3F2FD),       // Light blue
+  ItemCategory.Meats: Color(0xFFFFEBEE),       // Light red
+  ItemCategory.Grains: Color(0xFFEFEBE9),      // Light brown
+  ItemCategory.Sweets: Color(0xFFFCE4EC),      // Pink
+  ItemCategory.Oils: Color(0xFFFFFDE7),        // Light yellow
+};
 
 class _PantryListState extends State<PantryList> {
   List<dynamic> items = [];
@@ -45,6 +73,7 @@ class _PantryListState extends State<PantryList> {
   final TextEditingController _searchController = TextEditingController();
   List<dynamic> _originalItems = [];
   SortOption _currentSort = SortOption.newest;
+  FilterOption _filterOption = FilterOption.all;
 
   // Make sure this URL uses http://
   final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
@@ -54,6 +83,8 @@ class _PantryListState extends State<PantryList> {
     ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
 
   Timer? _refreshTimer;
+
+  String? _selectedCategory;
 
   @override
   void initState() {
@@ -85,8 +116,20 @@ class _PantryListState extends State<PantryList> {
       final response = await http.get(Uri.parse('$baseUrl/grocery/items'));
       if (response.statusCode == 200) {
         setState(() {
-          items = jsonDecode(response.body);
-          _originalItems = List.from(items);
+          final newItems = jsonDecode(response.body);
+          _originalItems = List.from(newItems);
+          
+          // Apply current search filter
+          if (_searchController.text.isNotEmpty) {
+            items = _originalItems
+                .where((item) => item['name']
+                    .toString()
+                    .toLowerCase()
+                    .contains(_searchController.text.toLowerCase()))
+                .toList();
+          } else {
+            items = List.from(_originalItems);
+          }
           _sortItems();
         });
       }
@@ -95,15 +138,30 @@ class _PantryListState extends State<PantryList> {
     }
   }
 
-  Future<void> addItem(String name) async {
-    final ioClient = IOClient(client);
-    await ioClient.post(
-      Uri.parse('$baseUrl/grocery/items'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'name': name}),
-    );
-    _controller.clear();
-    fetchItems();
+  Future<void> addItem(String name, int quantity, String category) async {
+    
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/grocery/items'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'quantity': quantity,
+          'category': category,  // Make sure this is being sent
+        }),
+      );
+            
+      if (response.statusCode == 200) {
+        _controller.clear();
+        fetchItems();
+      }
+    } catch (e) {
+      print('Error adding item: $e');
+    }
   }
 
   Future<void> toggleItem(int id, bool checked) async {
@@ -129,67 +187,77 @@ class _PantryListState extends State<PantryList> {
     });
   }
 
-  void _showQuantityDialog(String itemName) {
+  void _showAddItemDialog(String itemName) {
+    String selectedCategory = 'Vegetables';  // Default category
     int quantity = 1;
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('Set Quantity'),
+              title: const Text('Add Item'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Text('Item: $itemName'),
+                  SizedBox(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      Text('Quantity: '),
                       IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
+                        icon: Icon(Icons.remove_circle_outline),
                         onPressed: () {
-                          if (quantity > 1) {
-                            setState(() => quantity--);
-                          }
+                          if (quantity > 1) setState(() => quantity--);
                         },
                       ),
-                      SizedBox(
-                        width: 50,
-                        child: TextField(
-                          textAlign: TextAlign.center,
-                          controller: TextEditingController(text: quantity.toString()),
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (value) {
-                            final newQuantity = int.tryParse(value);
-                            if (newQuantity != null && newQuantity > 0) {
-                              setState(() => quantity = newQuantity);
-                            }
-                          },
-                        ),
-                      ),
+                      Text('$quantity'),
                       IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: () {
-                          setState(() => quantity++);
-                        },
+                        icon: Icon(Icons.add_circle_outline),
+                        onPressed: () => setState(() => quantity++),
                       ),
                     ],
+                  ),
+                  SizedBox(height: 20),
+                  // Make sure this dropdown is working
+                  DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    decoration: InputDecoration(
+                      labelText: 'Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      'Vegetables', 'Fruits', 'Dairy', 'Meats', 
+                      'Grains', 'Sweets', 'Oils', 'Electronics', 
+                      'Drinks', 'Medicine', 'Cleaning', 'Other'
+                    ].map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          selectedCategory = newValue;
+                        });
+                      }
+                    },
                   ),
                 ],
               ),
               actions: [
                 TextButton(
-                  child: const Text('Cancel'),
+                  child: Text('Cancel'),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 TextButton(
-                  child: const Text('Add'),
+                  child: Text('Add'),
                   onPressed: () {
-                    final finalName = '$itemName ($quantity)';
                     Navigator.of(context).pop();
-                    addItem(finalName);  // Use your existing addItem method
+                    addItem(itemName, quantity, selectedCategory);
                   },
                 ),
               ],
@@ -218,8 +286,173 @@ class _PantryListState extends State<PantryList> {
         case SortOption.newest:
           items.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
           break;
+        case SortOption.category:
+          // Sort by category
+          items.sort((a, b) => (a['category'] as String).compareTo(b['category'] as String));
+          break;
       }
     });
+  }
+
+  void _showEditDialog(Map<String, dynamic> item) {
+    String name = item['name'];
+    int quantity = item['quantity'];
+    String category = item['category'];
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Edit Item'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    decoration: InputDecoration(labelText: 'Name'),
+                    controller: TextEditingController(text: name),
+                    onChanged: (value) => name = value,
+                  ),
+                  SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Quantity: '),
+                      IconButton(
+                        icon: Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          if (quantity > 1) setState(() => quantity--);
+                        },
+                      ),
+                      Text('$quantity'),
+                      IconButton(
+                        icon: Icon(Icons.add_circle_outline),
+                        onPressed: () => setState(() => quantity++),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 20),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: InputDecoration(
+                      labelText: 'Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      'Vegetables', 'Fruits', 'Dairy', 'Meats', 
+                      'Grains', 'Sweets', 'Oils', 'Electronics', 
+                      'Drinks', 'Medicine', 'Cleaning', 'Other'
+                    ].map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
+                      .toList(),
+                    onChanged: (value) {
+                      if (value != null) setState(() => category = value);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                TextButton(
+                  child: Text('Save'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    updateItem(item['id'], name, quantity, category);
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> updateItem(int id, String name, int quantity, String category) async {
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/grocery/items/$id'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'quantity': quantity,
+          'category': category,
+          'checked': items.firstWhere((item) => item['id'] == id)['checked'],
+        }),
+      );
+      if (response.statusCode == 200) {
+        fetchItems();
+      }
+    } catch (e) {
+      print('Error updating item: $e');
+    }
+  }
+
+  List<Map<String, dynamic>> _getFilteredItems() {
+    if (_filterOption == FilterOption.category && _selectedCategory != null) {
+      // Cast the lists to the correct type
+      var categoryItems = items
+          .where((item) => item['category'] == _selectedCategory)
+          .map((item) => item as Map<String, dynamic>)
+          .toList();
+      
+      var otherItems = items
+          .where((item) => item['category'] != _selectedCategory)
+          .map((item) => item as Map<String, dynamic>)
+          .toList();
+      
+      return [...categoryItems, ...otherItems];
+    }
+    
+    return items
+        .where((item) {
+          switch (_filterOption) {
+            case FilterOption.all:
+              return true;
+            case FilterOption.checked:
+              return item['checked'] == 1;
+            case FilterOption.unchecked:
+              return item['checked'] == 0;
+            default:
+              return true;
+          }
+        })
+        .map((item) => item as Map<String, dynamic>)
+        .toList();
+  }
+
+  void _showCategoryFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Select Category'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                'Vegetables', 'Fruits', 'Dairy', 'Meats', 
+                'Grains', 'Sweets', 'Oils', 'Electronics', 
+                'Drinks', 'Medicine', 'Cleaning', 'Other'
+              ].map((category) => ListTile(
+                title: Text(category),
+                onTap: () {
+                  setState(() => _selectedCategory = category);
+                  Navigator.of(context).pop();
+                },
+              )).toList(),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -232,8 +465,12 @@ class _PantryListState extends State<PantryList> {
             icon: const Icon(Icons.filter_list),
             onSelected: (SortOption result) {
               setState(() {
-                _currentSort = result;
-                _sortItems();
+                if (result == SortOption.category) {
+                  _showCategoryFilterDialog();
+                } else {
+                  _currentSort = result;
+                  _sortItems();
+                }
               });
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<SortOption>>[
@@ -256,6 +493,11 @@ class _PantryListState extends State<PantryList> {
               const PopupMenuItem<SortOption>(
                 value: SortOption.newest,
                 child: Text('Newest'),
+              ),
+              const PopupMenuDivider(),  // Add a divider
+              const PopupMenuItem<SortOption>(
+                value: SortOption.category,
+                child: Text('Filter by Category'),
               ),
             ],
           ),
@@ -283,7 +525,7 @@ class _PantryListState extends State<PantryList> {
                   icon: const Icon(Icons.add),
                   onPressed: () {
                     if (_controller.text.isNotEmpty) {
-                      _showQuantityDialog(_controller.text);
+                      _showAddItemDialog(_controller.text);
                     }
                   },
                 ),
@@ -343,25 +585,57 @@ class _PantryListState extends State<PantryList> {
             child: RefreshIndicator(
               onRefresh: fetchItems,
               child: ListView.builder(
-                itemCount: items.length,
+                itemCount: _getFilteredItems().length,
                 itemBuilder: (context, index) {
-                  final item = items[index];
-                  return ListTile(
-                    leading: Checkbox(
-                      value: item['checked'] == 1,
-                      onChanged: (bool? value) {
-                        toggleItem(item['id'], value ?? false);
-                      },
+                  final item = _getFilteredItems()[index];
+                  final category = item['category'] as String? ?? 'Vegetables';
+                  
+                  final Color itemColor = switch(category.toLowerCase().trim()) {
+                    'vegetables' => Color(0xFFBEDFBF),  // More opaque green
+                    'fruits' => Color(0xFFA8D5AA),      // More opaque darker green
+                    'dairy' => Color(0xFFB3D4FC),       // More opaque blue
+                    'meats' => Color(0xFFFFCCCC),       // More opaque red
+                    'grains' => Color(0xFFDBC8B8),      // More opaque brown
+                    'sweets' => Color(0xFFFFC4D6),      // More opaque pink
+                    'oils' => Color(0xFFFFE5A5),        // More opaque yellow
+                    'electronics' => Color(0xFFB3E5FC),  // More opaque cyan
+                    'drinks' => Color(0xFFB2DFDB),      // More opaque teal
+                    'medicine' => Color(0xFFE1BEE7),    // More opaque purple
+                    'cleaning' => Color(0xFFE0E0E0),    // More opaque gray
+                    'other' => Color(0xFFEEEEEE),       // More opaque light gray
+                    _ => Colors.white,
+                  };
+
+                  return Container(
+                    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: itemColor,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    title: Text(
-                      item['name'],
-                      style: TextStyle(
-                        color: item['checked'] == 1 ? Colors.green : Colors.black,
+                    child: ListTile(
+                      leading: Checkbox(
+                        value: item['checked'] == 1,
+                        onChanged: (bool? value) => toggleItem(item['id'], value ?? false),
                       ),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: () => deleteItem(item['id']),
+                      title: Text(
+                        '${item['name']} (${item['quantity']}) ($category)',
+                        style: TextStyle(
+                          decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.edit),
+                            onPressed: () => _showEditDialog(item),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.delete),
+                            onPressed: () => deleteItem(item['id']),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -369,6 +643,56 @@ class _PantryListState extends State<PantryList> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class GroceryItem extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final Function(bool?) onCheckboxChanged;
+  final Function() onEdit;
+
+  const GroceryItem({
+    Key? key,
+    required this.item,
+    required this.onCheckboxChanged,
+    required this.onEdit,
+  }) : super(key: key);
+
+  Color _getCategoryColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'vegetables': return Color(0xFFE8F5E9);
+      case 'fruits': return Color(0xFFC8E6C9);
+      case 'dairy': return Color(0xFFE3F2FD);
+      case 'meats': return Color(0xFFFFEBEE);
+      case 'grains': return Color(0xFFEFEBE9);
+      case 'sweets': return Color(0xFFFCE4EC);
+      case 'oils': return Color(0xFFFFFDE7);
+      default: return Colors.white;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: _getCategoryColor(item['category']),
+      margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: ListTile(
+        leading: Checkbox(
+          value: item['checked'] == 1,
+          onChanged: onCheckboxChanged,
+        ),
+        title: Text(
+          '${item['name']} (${item['quantity']}) (${item['category']})',
+          style: TextStyle(
+            decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
+          ),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.edit),
+          onPressed: onEdit,
+        ),
       ),
     );
   }

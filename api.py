@@ -28,8 +28,13 @@ def add_item():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        'INSERT INTO grocery_items (name, checked, created_at) VALUES (?, 0, ?)',
-        (data['name'], datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        'INSERT INTO grocery_items (name, quantity, category, checked, created_at) VALUES (?, ?, ?, 0, ?)',
+        (
+            data['name'],
+            data['quantity'],
+            data['category'],
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
     )
     conn.commit()
     new_id = cursor.lastrowid
@@ -37,20 +42,22 @@ def add_item():
     return jsonify({'id': new_id, 'success': True})
 
 @app.route('/grocery/items/<int:item_id>', methods=['PUT'])
-def toggle_item(item_id):
-    try:
-        data = request.json
-        conn = get_db()
-        conn.execute(
-            'UPDATE grocery_items SET checked = ? WHERE id = ?',
-            (data['checked'], item_id)
+def update_item(item_id):
+    data = request.json
+    conn = get_db()
+    conn.execute(
+        'UPDATE grocery_items SET name = ?, quantity = ?, category = ?, checked = ? WHERE id = ?',
+        (
+            data['name'],
+            data.get('quantity', 1),
+            data.get('category', 'Vegetables'),
+            data.get('checked', 0),
+            item_id
         )
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True})
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({'error': str(e)}), 500
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
 
 @app.route('/grocery/items/<int:item_id>', methods=['DELETE'])
 def delete_item(item_id):
