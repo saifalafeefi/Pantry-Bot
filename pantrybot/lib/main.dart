@@ -165,13 +165,33 @@ class _PantryListState extends State<PantryList> {
   }
 
   Future<void> toggleItem(int id, bool checked) async {
-    final ioClient = IOClient(client);
-    await ioClient.put(
-      Uri.parse('$baseUrl/grocery/items/$id'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'checked': checked ? 1 : 0}),
-    );
-    fetchItems();
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/grocery/items/$id'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'checked': checked ? 1 : 0,
+          // Preserve existing values
+          'name': items.firstWhere((item) => item['id'] == id)['name'],
+          'quantity': items.firstWhere((item) => item['id'] == id)['quantity'],
+          'category': items.firstWhere((item) => item['id'] == id)['category'],
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        setState(() {
+          var item = items.firstWhere((item) => item['id'] == id);
+          item['checked'] = checked ? 1 : 0;
+        });
+        fetchItems();  // Refresh the list
+      }
+    } catch (e) {
+      print('Error toggling item: $e');
+    }
   }
 
   Future<void> deleteItem(int id) async {
