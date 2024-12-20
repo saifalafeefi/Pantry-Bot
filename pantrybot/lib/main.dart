@@ -4,6 +4,7 @@ import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/services.dart';
 
 void main() {
   runApp(const MyApp());
@@ -86,6 +87,9 @@ class _PantryListState extends State<PantryList> {
 
   String? _selectedCategory;
 
+  List<Map<String, dynamic>> _suggestions = [];
+  Timer? _debounceTimer;
+
   @override
   void initState() {
     super.initState();
@@ -165,6 +169,8 @@ class _PantryListState extends State<PantryList> {
   }
 
   Future<void> toggleItem(int id, bool checked) async {
+    HapticFeedback.selectionClick();
+    
     final ioc = HttpClient()
       ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
     final http = IOClient(ioc);
@@ -175,7 +181,6 @@ class _PantryListState extends State<PantryList> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'checked': checked ? 1 : 0,
-          // Preserve existing values
           'name': items.firstWhere((item) => item['id'] == id)['name'],
           'quantity': items.firstWhere((item) => item['id'] == id)['quantity'],
           'category': items.firstWhere((item) => item['id'] == id)['category'],
@@ -187,7 +192,7 @@ class _PantryListState extends State<PantryList> {
           var item = items.firstWhere((item) => item['id'] == id);
           item['checked'] = checked ? 1 : 0;
         });
-        fetchItems();  // Refresh the list
+        fetchItems();
       }
     } catch (e) {
       print('Error toggling item: $e');
@@ -195,6 +200,8 @@ class _PantryListState extends State<PantryList> {
   }
 
   Future<void> deleteItem(int id) async {
+    HapticFeedback.heavyImpact();
+    
     final ioClient = IOClient(client);
     await ioClient.delete(Uri.parse('$baseUrl/grocery/items/$id'));
     fetchItems();
@@ -207,8 +214,10 @@ class _PantryListState extends State<PantryList> {
     });
   }
 
-  void _showAddItemDialog(String itemName) {
-    String selectedCategory = 'Vegetables';  // Default category
+  void _showAddItemDialog(String itemName, {String? defaultCategory}) {
+    HapticFeedback.mediumImpact();
+    
+    String selectedCategory = defaultCategory ?? 'Vegetables';
     int quantity = 1;
 
     showDialog(
@@ -315,6 +324,8 @@ class _PantryListState extends State<PantryList> {
   }
 
   void _showEditDialog(Map<String, dynamic> item) {
+    HapticFeedback.lightImpact();
+    
     String name = item['name'];
     int quantity = item['quantity'];
     String category = item['category'];
@@ -504,6 +515,99 @@ class _PantryListState extends State<PantryList> {
     }
   }
 
+  Future<void> _fetchSuggestions(String query) async {
+    if (query.isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/grocery/suggestions?query=${Uri.encodeComponent(query)}'),
+      );
+      if (response.statusCode == 200) {
+        setState(() {
+          _suggestions = List<Map<String, dynamic>>.from(jsonDecode(response.body));
+        });
+      }
+    } catch (e) {
+      print('Error fetching suggestions: $e');
+    }
+  }
+
+  Widget _buildAddItemField() {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  decoration: const InputDecoration(
+                    hintText: 'Add new item',
+                  ),
+                  onChanged: (value) {
+                    // Debounce the API calls
+                    _debounceTimer?.cancel();
+                    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+                      _fetchSuggestions(value);
+                    });
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add),
+                onPressed: () {
+                  if (_controller.text.isNotEmpty) {
+                    HapticFeedback.mediumImpact();
+                    _showAddItemDialog(_controller.text);
+                  }
+                },
+              ),
+            ],
+          ),
+          // Show suggestions below the input field
+          if (_suggestions.isNotEmpty)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.5),
+                    spreadRadius: 1,
+                    blurRadius: 4,
+                  ),
+                ],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: _suggestions.map((suggestion) => ListTile(
+                  title: Text(suggestion['name']),
+                  subtitle: Text(suggestion['category']),
+                  trailing: Text('Used ${suggestion['use_count']} times'),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    _controller.text = suggestion['name'];
+                    _showAddItemDialog(
+                      suggestion['name'],
+                      defaultCategory: suggestion['category'],
+                    );
+                    setState(() => _suggestions = []);
+                  },
+                )).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -558,29 +662,7 @@ class _PantryListState extends State<PantryList> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      hintText: 'Add new item',
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () {
-                    if (_controller.text.isNotEmpty) {
-                      _showAddItemDialog(_controller.text);
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
+          _buildAddItemField(),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Stack(
@@ -664,7 +746,10 @@ class _PantryListState extends State<PantryList> {
                     child: ListTile(
                       leading: Checkbox(
                         value: item['checked'] == 1,
-                        onChanged: (bool? value) => toggleItem(item['id'], value ?? false),
+                        onChanged: (bool? value) {
+                          HapticFeedback.selectionClick();
+                          toggleItem(item['id'], value ?? false);
+                        },
                       ),
                       title: Text(
                         '${item['name']} (${item['quantity']}) ($category)',
@@ -677,11 +762,17 @@ class _PantryListState extends State<PantryList> {
                         children: [
                           IconButton(
                             icon: Icon(Icons.edit),
-                            onPressed: () => _showEditDialog(item),
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              _showEditDialog(item);
+                            },
                           ),
                           IconButton(
                             icon: Icon(Icons.delete),
-                            onPressed: () => deleteItem(item['id']),
+                            onPressed: () {
+                              HapticFeedback.heavyImpact();
+                              deleteItem(item['id']);
+                            },
                           ),
                         ],
                       ),
