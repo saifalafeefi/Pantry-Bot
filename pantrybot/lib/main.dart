@@ -5,40 +5,83 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'screens/login_screen.dart';
 
-void main() {
-  runApp(const MyApp());
+enum SortOption {
+  newest,
+  oldest,
+  nameAZ,
+  nameZA,
+  categoryAZ,
+  categoryZA,
+  unchecked,
+  aToZ,
+  zToA,
+  category,
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+  final isAdmin = prefs.getBool('isAdmin') ?? false;
+  final userId = prefs.getInt('userId') ?? 0;
+  final username = prefs.getString('username') ?? '';
+
+  runApp(MyApp(
+    isLoggedIn: isLoggedIn, 
+    isAdmin: isAdmin,
+    userId: userId,
+    username: username,
+  ));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  final bool isLoggedIn;
+  final bool isAdmin;
+  final int userId;
+  final String username;
+
+  const MyApp({
+    Key? key, 
+    required this.isLoggedIn, 
+    required this.isAdmin,
+    this.userId = 0,
+    this.username = '',
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'PantryBot',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: const PantryList(),
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: isLoggedIn 
+          ? PantryList(
+              isAdmin: isAdmin,
+              userId: userId,
+              username: username,
+            ) 
+          : LoginScreen(),
     );
   }
 }
 
 class PantryList extends StatefulWidget {
-  const PantryList({Key? key}) : super(key: key);
+  final bool isAdmin;
+  final int userId;
+  final String username;
+  final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
+
+  const PantryList({
+    Key? key,
+    required this.isAdmin,
+    required this.userId,
+    required this.username,
+  }) : super(key: key);
 
   @override
   _PantryListState createState() => _PantryListState();
-}
-
-enum SortOption {
-  unchecked,
-  aToZ,
-  zToA,
-  oldest,
-  newest,
-  category,
 }
 
 enum ItemCategory {
@@ -69,12 +112,23 @@ final categoryColors = {
 };
 
 class _PantryListState extends State<PantryList> {
-  List<dynamic> items = [];
+  List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _originalItems = [];
+  List<Map<String, dynamic>> _suggestions = [];
+  bool _isLoading = false;
   final TextEditingController _controller = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
-  List<dynamic> _originalItems = [];
+  Timer? _debounceTimer;
   SortOption _currentSort = SortOption.newest;
-  FilterOption _filterOption = FilterOption.all;
+
+  // Getter for items to replace direct access
+  List<Map<String, dynamic>> get items => _items;
+  // Setter for items
+  set items(List<Map<String, dynamic>> value) {
+    setState(() {
+      _items = value;
+    });
+  }
 
   // Make sure this URL uses http://
   final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
@@ -86,9 +140,6 @@ class _PantryListState extends State<PantryList> {
   Timer? _refreshTimer;
 
   String? _selectedCategory;
-
-  List<Map<String, dynamic>> _suggestions = [];
-  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -108,60 +159,81 @@ class _PantryListState extends State<PantryList> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _controller.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
   Future<void> fetchItems() async {
+    setState(() => _isLoading = true);
     final ioc = HttpClient()
       ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
     final http = IOClient(ioc);
 
     try {
-      final response = await http.get(Uri.parse('$baseUrl/grocery/items'));
+      print('Fetching items for user: ${widget.userId}'); // Debug log
+      final response = await http.get(
+        Uri.parse('$baseUrl/grocery/items?user_id=${widget.userId}'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      print('Fetch response status: ${response.statusCode}'); // Debug log
+      print('Fetch response body: ${response.body}'); // Debug log
+
       if (response.statusCode == 200) {
+        final items = jsonDecode(response.body);
         setState(() {
-          final newItems = jsonDecode(response.body);
-          _originalItems = List.from(newItems);
-          
-          // Apply current search filter
-          if (_searchController.text.isNotEmpty) {
-            items = _originalItems
-                .where((item) => item['name']
-                    .toString()
-                    .toLowerCase()
-                    .contains(_searchController.text.toLowerCase()))
-                .toList();
-          } else {
-            items = List.from(_originalItems);
-          }
-          _sortItems();
+          _items = List<Map<String, dynamic>>.from(items);
+          _isLoading = false;
         });
+        _sortItems();
       }
     } catch (e) {
       print('Error fetching items: $e');
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> addItem(String name, int quantity, String category) async {
+    print('Adding item: $name (qty: $quantity) for user: ${widget.userId}'); // Debug log
     
     final ioc = HttpClient()
       ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
     final http = IOClient(ioc);
 
     try {
+      final requestData = {
+        'name': name,
+        'quantity': quantity,
+        'category': category,
+        'user_id': widget.userId,
+      };
+      print('Sending request: $requestData'); // Debug log
+
       final response = await http.post(
         Uri.parse('$baseUrl/grocery/items'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'name': name,
-          'quantity': quantity,
-          'category': category,  // Make sure this is being sent
-        }),
+        body: jsonEncode(requestData),
       );
-            
+      
+      print('Response status: ${response.statusCode}'); // Debug log
+      print('Response body: ${response.body}'); // Debug log
+      
       if (response.statusCode == 200) {
-        _controller.clear();
-        fetchItems();
+        final data = jsonDecode(response.body);
+        if (data['success']) {
+          print('Successfully added item. Adding to list: ${data['item']}'); // Debug log
+          setState(() {
+            _items.insert(0, Map<String, dynamic>.from(data['item']));
+          });
+          _controller.clear();
+          _sortItems();
+          print('Current items list: $_items'); // Debug log
+        } else {
+          print('Server returned success: false'); // Debug log
+        }
+      } else {
+        print('Error adding item: ${response.body}');
       }
     } catch (e) {
       print('Error adding item: $e');
@@ -184,6 +256,7 @@ class _PantryListState extends State<PantryList> {
           'name': items.firstWhere((item) => item['id'] == id)['name'],
           'quantity': items.firstWhere((item) => item['id'] == id)['quantity'],
           'category': items.firstWhere((item) => item['id'] == id)['category'],
+          'user_id': widget.userId,
         }),
       );
       
@@ -301,23 +374,34 @@ class _PantryListState extends State<PantryList> {
     setState(() {
       switch (_currentSort) {
         case SortOption.unchecked:
-          items.sort((a, b) => (a['checked'] as int).compareTo(b['checked'] as int));
+          _items.sort((a, b) => (a['checked'] as int).compareTo(b['checked'] as int));
           break;
         case SortOption.aToZ:
-          items.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+          _items.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
           break;
         case SortOption.zToA:
-          items.sort((a, b) => (b['name'] as String).compareTo(a['name'] as String));
-          break;
-        case SortOption.oldest:
-          items.sort((a, b) => (a['created_at'] as String).compareTo(b['created_at'] as String));
+          _items.sort((a, b) => (b['name'] as String).compareTo(a['name'] as String));
           break;
         case SortOption.newest:
-          items.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+          _items.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+          break;
+        case SortOption.oldest:
+          _items.sort((a, b) => (a['created_at'] as String).compareTo(b['created_at'] as String));
+          break;
+        case SortOption.nameAZ:
+          _items.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+          break;
+        case SortOption.nameZA:
+          _items.sort((a, b) => (b['name'] as String).compareTo(a['name'] as String));
+          break;
+        case SortOption.categoryAZ:
+          _items.sort((a, b) => (a['category'] as String).compareTo(b['category'] as String));
+          break;
+        case SortOption.categoryZA:
+          _items.sort((a, b) => (b['category'] as String).compareTo(a['category'] as String));
           break;
         case SortOption.category:
-          // Sort by category
-          items.sort((a, b) => (a['category'] as String).compareTo(b['category'] as String));
+          _showCategoryFilterDialog();
           break;
       }
     });
@@ -503,11 +587,23 @@ class _PantryListState extends State<PantryList> {
       case SortOption.zToA:
         items.sort((a, b) => (b['name'] as String).compareTo(a['name'] as String));
         break;
+      case SortOption.newest:
+        items.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+        break;
       case SortOption.oldest:
         items.sort((a, b) => (a['created_at'] as String).compareTo(b['created_at'] as String));
         break;
-      case SortOption.newest:
-        items.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+      case SortOption.nameAZ:
+        items.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+        break;
+      case SortOption.nameZA:
+        items.sort((a, b) => (b['name'] as String).compareTo(a['name'] as String));
+        break;
+      case SortOption.categoryAZ:
+        items.sort((a, b) => (a['category'] as String).compareTo(b['category'] as String));
+        break;
+      case SortOption.categoryZA:
+        items.sort((a, b) => (b['category'] as String).compareTo(a['category'] as String));
         break;
       case SortOption.category:
         items.sort((a, b) => (a['category'] as String).compareTo(b['category'] as String));
@@ -527,7 +623,7 @@ class _PantryListState extends State<PantryList> {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/grocery/suggestions?query=${Uri.encodeComponent(query)}'),
+        Uri.parse('$baseUrl/grocery/suggestions?query=${Uri.encodeComponent(query)}&user_id=${widget.userId}'),
       );
       if (response.statusCode == 200) {
         setState(() {
@@ -608,12 +704,24 @@ class _PantryListState extends State<PantryList> {
     );
   }
 
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();  // Clear all stored preferences
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => LoginScreen())
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('PantryBot Shopping List'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+          ),
           PopupMenuButton<SortOption>(
             icon: const Icon(Icons.filter_list),
             onSelected: (SortOption result) {
