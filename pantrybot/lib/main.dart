@@ -712,12 +712,139 @@ class _PantryListState extends State<PantryList> {
     );
   }
 
+  Future<void> _showDeleteConfirmation(Map<String, dynamic> item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Item'),
+          content: Text('Are you sure you want to delete "${item['name']}"?'),
+          actions: [
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: Text('Delete'),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+    
+    if (confirmed == true) {
+      deleteItem(item['id']);
+    }
+  }
+
+  void _showGestureHelp() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.touch_app, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Quick Actions Guide'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildGestureHelpItem(
+                  Icons.swipe_right,
+                  'Swipe Right',
+                  'Check/uncheck items instantly',
+                  Colors.green,
+                ),
+                SizedBox(height: 12),
+                _buildGestureHelpItem(
+                  Icons.swipe_left,
+                  'Swipe Left',
+                  'Delete items (with confirmation)',
+                  Colors.red,
+                ),
+                SizedBox(height: 12),
+                _buildGestureHelpItem(
+                  Icons.touch_app,
+                  'Long Press',
+                  'Quick edit item details',
+                  Colors.orange,
+                ),
+                SizedBox(height: 12),
+                _buildGestureHelpItem(
+                  Icons.touch_app,
+                  'Double Tap',
+                  'Toggle check/uncheck',
+                  Colors.blue,
+                ),
+                SizedBox(height: 12),
+                _buildGestureHelpItem(
+                  Icons.refresh,
+                  'Pull Down',
+                  'Refresh the list',
+                  Colors.purple,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text('Got it!'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGestureHelpItem(IconData icon, String gesture, String description, Color color) {
+    return Row(
+      children: [
+        Container(
+          padding: EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                gesture,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                description,
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('PantryBot Shopping List'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            onPressed: _showGestureHelp,
+            tooltip: 'Quick Actions Guide',
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,
@@ -847,42 +974,176 @@ class _PantryListState extends State<PantryList> {
 
                   return Container(
                     margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: itemColor,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      leading: Checkbox(
-                        value: item['checked'] == 1,
-                        onChanged: (bool? value) {
-                          HapticFeedback.selectionClick();
-                          toggleItem(item['id'], value ?? false);
-                        },
-                      ),
-                      title: Text(
-                        '${item['name']} (${item['quantity']}) ($category)',
-                        style: TextStyle(
-                          decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
+                    child: Dismissible(
+                      key: Key('item_${item['id']}'),
+                      background: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade400,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.centerLeft,
+                        padding: EdgeInsets.only(left: 20),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              item['checked'] == 1 ? Icons.remove_done : Icons.check,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              item['checked'] == 1 ? 'Uncheck' : 'Check Off',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.edit),
-                            onPressed: () {
-                              HapticFeedback.lightImpact();
-                              _showEditDialog(item);
+                      secondaryBackground: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade400,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.centerRight,
+                        padding: EdgeInsets.only(right: 20),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              'Delete',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(
+                              Icons.delete,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ],
+                        ),
+                      ),
+                      confirmDismiss: (direction) async {
+                        if (direction == DismissDirection.endToStart) {
+                          // Confirm delete
+                          return await showDialog<bool>(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                title: Text('Delete Item'),
+                                content: Text('Are you sure you want to delete "${item['name']}"?'),
+                                actions: [
+                                  TextButton(
+                                    child: Text('Cancel'),
+                                    onPressed: () => Navigator.of(context).pop(false),
+                                  ),
+                                  TextButton(
+                                    child: Text('Delete'),
+                                    onPressed: () => Navigator.of(context).pop(true),
+                                  ),
+                                ],
+                              );
                             },
+                          ) ?? false;
+                        }
+                        return true; // Allow swipe for check/uncheck
+                      },
+                      onDismissed: (direction) {
+                        if (direction == DismissDirection.startToEnd) {
+                          // Toggle check/uncheck
+                          HapticFeedback.mediumImpact();
+                          toggleItem(item['id'], item['checked'] != 1);
+                          
+                          // Show feedback snackbar
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                item['checked'] == 1 
+                                  ? '${item['name']} unchecked' 
+                                  : '${item['name']} checked off'
+                              ),
+                              duration: Duration(seconds: 1),
+                              action: SnackBarAction(
+                                label: 'Undo',
+                                onPressed: () {
+                                  toggleItem(item['id'], item['checked'] == 1);
+                                },
+                              ),
+                            ),
+                          );
+                        } else {
+                          // Delete item
+                          HapticFeedback.heavyImpact();
+                          deleteItem(item['id']);
+                          
+                          // Show delete confirmation
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('${item['name']} deleted'),
+                              duration: Duration(seconds: 2),
+                              backgroundColor: Colors.red.shade600,
+                            ),
+                          );
+                        }
+                      },
+                      child: GestureDetector(
+                        onLongPress: () {
+                          HapticFeedback.lightImpact();
+                          _showEditDialog(item);
+                        },
+                        onDoubleTap: () {
+                          HapticFeedback.selectionClick();
+                          // Quick toggle on double tap
+                          toggleItem(item['id'], item['checked'] != 1);
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: itemColor,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          IconButton(
-                            icon: Icon(Icons.delete),
-                            onPressed: () {
-                              HapticFeedback.heavyImpact();
-                              deleteItem(item['id']);
-                            },
+                          child: ListTile(
+                            leading: Checkbox(
+                              value: item['checked'] == 1,
+                              onChanged: (bool? value) {
+                                HapticFeedback.selectionClick();
+                                toggleItem(item['id'], value ?? false);
+                              },
+                            ),
+                            title: Text(
+                              '${item['name']} (${item['quantity']}) ($category)',
+                              style: TextStyle(
+                                decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
+                              ),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.edit),
+                                  onPressed: () {
+                                    HapticFeedback.lightImpact();
+                                    _showEditDialog(item);
+                                  },
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.delete),
+                                  onPressed: () {
+                                    HapticFeedback.heavyImpact();
+                                    _showDeleteConfirmation(item);
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   );
