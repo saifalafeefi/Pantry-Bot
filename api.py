@@ -8,17 +8,24 @@ import secrets
 app = Flask(__name__)
 CORS(app)
 
+# Performance optimizations
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['JSON_SORT_KEYS'] = False
+
 DB_PATH = 'pantrybot.db'
 
 def hash_password(password):
     """Hash a password for storing."""
     salt = secrets.token_hex(16)
+    # Use 100k iterations for better security
     pwdhash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return f"{salt}${pwdhash.hex()}"
 
 def verify_password(stored_password, provided_password):
     """Verify a stored password against one provided by user"""
+    print(f"DEBUG: stored_password = '{stored_password}'")
     salt, key = stored_password.split('$')
+    # Match the 100k iterations
     pwdhash = hashlib.pbkdf2_hmac('sha256', provided_password.encode(), salt.encode(), 100000)
     return pwdhash.hex() == key
 
@@ -39,31 +46,50 @@ def get_db():
     )
     ''')
     
-    # Create user-specific grocery items table
+    # Create grocery_items table
     conn.execute('''
     CREATE TABLE IF NOT EXISTS grocery_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         quantity INTEGER DEFAULT 1,
-        category TEXT NOT NULL,
-        checked BOOLEAN DEFAULT 0,
+        category TEXT DEFAULT 'Vegetables',
+        checked INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        user_id INTEGER,
+        priority INTEGER DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users (id)
     )
     ''')
     
-    # Create user-specific item history table
+    # Create items table (pantry items)
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        entry_date TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        user_id INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+    ''')
+    
+    # Add user_id column to existing tables if it doesn't exist
+    try:
+        conn.execute('ALTER TABLE items ADD COLUMN user_id INTEGER')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    # Add item_history table
     conn.execute('''
     CREATE TABLE IF NOT EXISTS item_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         category TEXT NOT NULL,
         last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        use_count INTEGER DEFAULT 1,
-        UNIQUE(user_id, name, category),
-        FOREIGN KEY (user_id) REFERENCES users (id)
+        frequency INTEGER DEFAULT 1,
+        UNIQUE(name, category)
     )
     ''')
     
@@ -86,23 +112,33 @@ def get_db():
 # User management endpoints
 @app.route('/auth/login', methods=['POST'])
 def login():
-    data = request.json
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM users WHERE username = ?', (data['username'],))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user and verify_password(user['password_hash'], data['password']):
-        return jsonify({
-            'success': True,
-            'user_id': user['id'],
-            'username': user['username'],
-            'is_admin': bool(user['is_admin'])
-        })
-    
-    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+    try:
+        data = request.json
+        if not data or not data.get('username') or not data.get('password'):
+            return jsonify({'success': False, 'message': 'Missing credentials'}), 400
+            
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Optimized query - only get what we need
+        cursor.execute('SELECT id, username, password_hash, is_admin FROM users WHERE username = ? LIMIT 1', 
+                      (data['username'],))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user and verify_password(user['password_hash'], data['password']):
+            return jsonify({
+                'success': True,
+                'user_id': user['id'],
+                'username': user['username'],
+                'is_admin': bool(user['is_admin'])
+            })
+        
+        return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+        
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({'success': False, 'message': 'Server error'}), 500
 
 @app.route('/users', methods=['GET'])
 def get_users():
@@ -174,12 +210,12 @@ def add_item():
     try:
         # First update or insert into item_history
         cursor.execute('''
-            INSERT INTO item_history (name, category, user_id, last_used, use_count)
+            INSERT INTO item_history (name, category, user_id, last_used, frequency)
             VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1)
             ON CONFLICT(name, category, user_id) 
             DO UPDATE SET
                 last_used = CURRENT_TIMESTAMP,
-                use_count = use_count + 1
+                frequency = frequency + 1
             WHERE user_id = ?
         ''', (name, category, user_id, user_id))
         
@@ -252,19 +288,19 @@ def get_suggestions():
     conn = get_db()
     if is_admin:
         suggestions = conn.execute('''
-            SELECT DISTINCT name, category, MAX(use_count) as use_count 
+            SELECT DISTINCT name, category, MAX(frequency) as frequency 
             FROM item_history 
             WHERE LOWER(name) LIKE ? 
             GROUP BY name, category
-            ORDER BY use_count DESC, last_used DESC 
+            ORDER BY frequency DESC, last_used DESC 
             LIMIT 1000
         ''', (f'%{query}%',)).fetchall()
     else:
         suggestions = conn.execute('''
-            SELECT name, category, use_count 
+            SELECT name, category, frequency 
             FROM item_history 
             WHERE LOWER(name) LIKE ? AND user_id = ?
-            ORDER BY use_count DESC, last_used DESC 
+            ORDER BY frequency DESC, last_used DESC 
             LIMIT 5
         ''', (f'%{query}%', user_id)).fetchall()
     
@@ -293,8 +329,8 @@ def migrate_user_data():
         
         # Copy item history
         cursor.execute('''
-            INSERT INTO item_history (user_id, name, category, last_used, use_count)
-            SELECT ?, name, category, last_used, use_count
+            INSERT INTO item_history (user_id, name, category, last_used, frequency)
+            SELECT ?, name, category, last_used, frequency
             FROM item_history WHERE user_id = ?
         ''', (target_user_id, source_user_id))
         
@@ -305,6 +341,110 @@ def migrate_user_data():
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
+@app.route('/pantry/items', methods=['GET'])
+def get_pantry_items():
+    user_id = request.args.get('user_id')
+    sort_by = request.args.get('sort', 'expiry_date')
+    
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    conn = get_db()
+    
+    # Validate sort parameter
+    valid_sorts = ['name', 'type', 'expiry_date', 'entry_date', 'quantity']
+    if sort_by not in valid_sorts:
+        sort_by = 'expiry_date'
+    
+    items = conn.execute(f'''
+        SELECT id, name, type, quantity, entry_date, expiry_date
+        FROM items 
+        WHERE user_id = ?
+        ORDER BY {sort_by} ASC
+    ''', (user_id,)).fetchall()
+    
+    conn.close()
+    return jsonify([dict(item) for item in items])
+
+@app.route('/pantry/items', methods=['POST'])
+def add_pantry_item():
+    data = request.get_json()
+    
+    required_fields = ['name', 'type', 'quantity', 'expiry_date', 'user_id']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    
+    from datetime import datetime
+    entry_date = datetime.now().strftime('%Y-%m-%d')
+    
+    cursor = conn.execute('''
+        INSERT INTO items (name, type, quantity, entry_date, expiry_date, user_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (data['name'], data['type'], data['quantity'], entry_date, data['expiry_date'], data['user_id']))
+    
+    conn.commit()
+    item_id = cursor.lastrowid
+    conn.close()
+    
+    return jsonify({'id': item_id, 'message': 'Item added successfully'}), 201
+
+@app.route('/pantry/items/<int:item_id>', methods=['PUT'])
+def update_pantry_item(item_id):
+    data = request.get_json()
+    
+    required_fields = ['name', 'type', 'quantity', 'expiry_date']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    
+    conn.execute('''
+        UPDATE items 
+        SET name = ?, type = ?, quantity = ?, expiry_date = ?
+        WHERE id = ?
+    ''', (data['name'], data['type'], data['quantity'], data['expiry_date'], item_id))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Item updated successfully'})
+
+@app.route('/pantry/items/<int:item_id>', methods=['DELETE'])
+def delete_pantry_item(item_id):
+    conn = get_db()
+    
+    conn.execute('DELETE FROM items WHERE id = ?', (item_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Item deleted successfully'})
+
+@app.route('/pantry/expiring', methods=['GET'])
+def get_expiring_pantry_items():
+    user_id = request.args.get('user_id')
+    days_ahead = request.args.get('days', 3, type=int)
+    
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    conn = get_db()
+    
+    # Get items expiring within the specified days
+    expiring_items = conn.execute('''
+        SELECT name, type, expiry_date,
+               CAST((julianday(expiry_date) - julianday('now')) AS INTEGER) as days_until_expiry
+        FROM items 
+        WHERE user_id = ? 
+        AND julianday(expiry_date) - julianday('now') BETWEEN -1 AND ?
+        ORDER BY expiry_date ASC
+        LIMIT 10
+    ''', (user_id, days_ahead)).fetchall()
+    
+    conn.close()
+    return jsonify([dict(item) for item in expiring_items])
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 

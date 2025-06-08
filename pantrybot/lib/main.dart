@@ -7,6 +7,9 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/login_screen.dart';
+import 'screens/pantry_items_screen.dart';
+import 'screens/admin_screen.dart';
+import 'services/notification_service.dart';
 
 enum SortOption {
   newest,
@@ -23,6 +26,10 @@ enum SortOption {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize notifications
+  await NotificationService.initialize();
+  
   final prefs = await SharedPreferences.getInstance();
   final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
   final isAdmin = prefs.getBool('isAdmin') ?? false;
@@ -71,7 +78,7 @@ class PantryList extends StatefulWidget {
   final bool isAdmin;
   final int userId;
   final String username;
-  final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
+  final String baseUrl = 'https://192.168.1.192:8443';
 
   const PantryList({
     Key? key,
@@ -131,11 +138,13 @@ class _PantryListState extends State<PantryList> {
   }
 
   // Make sure this URL uses http://
-  final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
+  final String baseUrl = 'https://192.168.1.192:8443';
 
-  // Add this HTTP client that bypasses certificate verification
+  // Add this HTTP client that bypasses certificate verification with optimizations
   final client = HttpClient()
-    ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true)
+    ..connectionTimeout = const Duration(seconds: 10)
+    ..idleTimeout = const Duration(seconds: 15);
 
   Timer? _refreshTimer;
 
@@ -149,8 +158,8 @@ class _PantryListState extends State<PantryList> {
     });
     fetchItems();
     
-    // Set up timer to refresh every 2 seconds
-    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    // Set up timer to refresh every 30 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       fetchItems();
     });
   }
@@ -167,15 +176,21 @@ class _PantryListState extends State<PantryList> {
   Future<void> fetchItems() async {
     setState(() => _isLoading = true);
     final ioc = HttpClient()
-      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true)
+      ..connectionTimeout = const Duration(seconds: 30)
+      ..idleTimeout = const Duration(seconds: 60);
     final http = IOClient(ioc);
 
     try {
       print('Fetching items for user: ${widget.userId}'); // Debug log
       final response = await http.get(
         Uri.parse('$baseUrl/grocery/items?user_id=${widget.userId}'),
-        headers: {'Content-Type': 'application/json'},
-      );
+        headers: {
+          'Content-Type': 'application/json',
+          'Connection': 'keep-alive',
+          'Accept-Encoding': 'gzip',
+        },
+      ).timeout(const Duration(seconds: 30));
 
       print('Fetch response status: ${response.statusCode}'); // Debug log
       print('Fetch response body: ${response.body}'); // Debug log
@@ -738,6 +753,59 @@ class _PantryListState extends State<PantryList> {
     }
   }
 
+  void _showNotificationSettings() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.notifications, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text('Notification Settings'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Get notified when your pantry items are about to expire!'),
+                  SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await NotificationService.testNotification();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Test notification sent!')),
+                      );
+                    },
+                    child: Text('Test Notifications'),
+                  ),
+                  SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await NotificationService.checkExpiringItems();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Checked for expiring pantry items!')),
+                      );
+                    },
+                    child: Text('Check Expiring Items'),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  child: Text('Close'),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showGestureHelp() {
     showDialog(
       context: context,
@@ -845,6 +913,37 @@ class _PantryListState extends State<PantryList> {
             onPressed: _showGestureHelp,
             tooltip: 'Quick Actions Guide',
           ),
+          IconButton(
+            icon: const Icon(Icons.kitchen),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PantryItemsScreen(
+                    userId: widget.userId,
+                    isAdmin: widget.isAdmin,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Pantry Items',
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications),
+            onPressed: _showNotificationSettings,
+            tooltip: 'Notification Settings',
+          ),
+          if (widget.isAdmin)
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => AdminScreen()),
+                );
+              },
+              tooltip: 'Admin Panel',
+            ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,

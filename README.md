@@ -77,10 +77,28 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
    # Or build for release: flutter build apk
    ```
 
-## 👤 Default User Accounts
+## 🔧 Recent Updates & Fixes
 
-- **Admin Account**: `admin` / `TheReal360`
-- **User Account**: `whitehouse` / `Adnoc2003`
+**Authentication System Overhaul:**
+- Fixed password hashing iteration mismatch causing 500/401 login errors
+- Resolved database password hash corruption issues
+- Improved login error handling with better debugging information
+
+**Admin Panel Restoration:**
+- Recreated admin panel with expandable user list interface
+- Added admin button (shield icon) to main app interface for easy access
+- Admin can now view all users and their individual grocery items
+- Color-coded user status (admin vs regular users)
+
+**Database Schema Updates:**
+- Added missing `frequency` and `user_id` columns to item_history table
+- Fixed database compatibility issues with newer code versions
+- Improved item suggestion system with usage tracking
+
+**Performance Improvements:**
+- Switched to local Pi IP addressing for faster response times
+- Reduced connection timeouts and improved error handling
+- Better SSL certificate handling for development environments
 
 ## 📱 User Manual
 
