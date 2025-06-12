@@ -78,7 +78,7 @@ class PantryList extends StatefulWidget {
   final bool isAdmin;
   final int userId;
   final String username;
-  final String baseUrl = 'https://192.168.1.192:8443';
+  final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
 
   const PantryList({
     Key? key,
@@ -138,7 +138,7 @@ class _PantryListState extends State<PantryList> {
   }
 
   // Make sure this URL uses http://
-  final String baseUrl = 'https://192.168.1.192:8443';
+  final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
 
   // Add this HTTP client that bypasses certificate verification with optimizations
   final client = HttpClient()
@@ -298,7 +298,7 @@ class _PantryListState extends State<PantryList> {
   void _clearSearch() {
     setState(() {
       _searchController.clear();
-      items = List.from(_originalItems);
+      // Filtering is now handled in _getFilteredItems(), so just trigger rebuild
     });
   }
 
@@ -570,6 +570,13 @@ class _PantryListState extends State<PantryList> {
 
   List<Map<String, dynamic>> _getFilteredItems() {
     var allItems = items.map((item) => item as Map<String, dynamic>).toList();
+    
+    // Apply search filter first
+    if (_searchController.text.isNotEmpty) {
+      allItems = allItems.where((item) => 
+        item['name'].toString().toLowerCase().contains(_searchController.text.toLowerCase())
+      ).toList();
+    }
     
     // If a category is selected, split and reorder the items
     if (_selectedCategory != null) {
@@ -1014,16 +1021,7 @@ class _PantryListState extends State<PantryList> {
                   ),
                   onChanged: (value) {
                     setState(() {
-                      if (value.isEmpty) {
-                        items = List.from(_originalItems);
-                      } else {
-                        items = _originalItems
-                            .where((item) => item['name']
-                                .toString()
-                                .toLowerCase()
-                                .contains(value.toLowerCase()))
-                            .toList();
-                      }
+                      // Just trigger a rebuild - filtering is now handled in _getFilteredItems()
                     });
                   },
                 ),

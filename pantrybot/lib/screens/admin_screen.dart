@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AdminScreen extends StatefulWidget {
   @override
@@ -13,12 +14,19 @@ class _AdminScreenState extends State<AdminScreen> {
   List<Map<String, dynamic>> _users = [];
   Map<int, List<Map<String, dynamic>>> _userItems = {};
   bool _isLoading = false;
-  final String baseUrl = 'https://192.168.1.192:8443';
+  int? _currentUserId;
+  final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
 
   @override
   void initState() {
     super.initState();
+    _getCurrentUserId();
     _fetchUsers();
+  }
+
+  Future<void> _getCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    _currentUserId = prefs.getInt('userId');
   }
 
   Future<void> _fetchUsers() async {
@@ -70,6 +78,63 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  Future<void> _deleteUser(int userId, String username) async {
+    // Don't allow deleting yourself
+    if (userId == _currentUserId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You cannot delete your own account!')),
+      );
+      return;
+    }
+
+    // Confirm deletion
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete User'),
+        content: Text('Are you sure you want to delete user "$username"?\n\nThis will permanently delete:\n• Their account\n• All their grocery items\n• All their pantry items\n\nThis action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final ioc = HttpClient()
+        ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+      final httpClient = IOClient(ioc);
+
+      final response = await httpClient.delete(
+        Uri.parse('$baseUrl/users/$userId')
+      );
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('User "$username" deleted successfully')),
+        );
+        _fetchUsers(); // Refresh the list
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete user')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting user: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -112,7 +177,14 @@ class _AdminScreenState extends State<AdminScreen> {
                           ),
                       ],
                     ),
-                    subtitle: Text('${userItems.length} items • Created: ${user['created_at']}'),
+                                         subtitle: Text('${userItems.length} items • Created: ${user['created_at']}'),
+                     trailing: user['id'] != _currentUserId 
+                         ? IconButton(
+                             icon: Icon(Icons.delete, color: Colors.red),
+                             onPressed: () => _deleteUser(user['id'], user['username']),
+                             tooltip: 'Delete User',
+                           )
+                         : null,
                     children: [
                       if (userItems.isEmpty)
                         Padding(

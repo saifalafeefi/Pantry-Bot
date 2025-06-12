@@ -37,7 +37,7 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
       final httpClient = IOClient(ioc);
 
       final response = await httpClient.get(
-        Uri.parse('https://192.168.1.192:8443/pantry/items?user_id=${widget.userId}&sort=$sortBy'),
+        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items?user_id=${widget.userId}&sort=$sortBy'),
       );
 
       if (response.statusCode == 200) {
@@ -62,7 +62,7 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
       final httpClient = IOClient(ioc);
 
       final response = await httpClient.delete(
-        Uri.parse('https://192.168.1.192:8443/pantry/items/$itemId'),
+        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items/$itemId'),
       );
 
       if (response.statusCode == 200) {
@@ -362,14 +362,14 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
       if (itemId == null) {
         // Add new item
         response = await httpClient.post(
-        Uri.parse('https://192.168.1.192:8443/pantry/items'),
+        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items'),
           headers: {'Content-Type': 'application/json'},
           body: body,
         );
       } else {
         // Update existing item
-        response = await httpClient.put(
-        Uri.parse('https://192.168.1.192:8443/pantry/items/$itemId'),
+                  response = await httpClient.put(
+        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items/$itemId'),
           headers: {'Content-Type': 'application/json'},
           body: body,
         );

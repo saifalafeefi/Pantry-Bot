@@ -169,6 +169,53 @@ def create_user():
         conn.close()
         return jsonify({'success': False, 'message': 'Username already exists'}), 409
 
+@app.route('/users/<int:user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    print(f"Attempting to delete user ID: {user_id}")  # Debug log
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if user exists first
+        cursor.execute('SELECT id, username FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            print(f"User ID {user_id} not found in database")  # Debug log
+            conn.close()
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+        print(f"Found user: {user['username']} (ID: {user['id']})")  # Debug log
+        
+        # Delete user's items first (foreign key constraints)
+        cursor.execute('DELETE FROM grocery_items WHERE user_id = ?', (user_id,))
+        deleted_grocery = cursor.rowcount
+        print(f"Deleted {deleted_grocery} grocery items")  # Debug log
+        
+        cursor.execute('DELETE FROM items WHERE user_id = ?', (user_id,))
+        deleted_pantry = cursor.rowcount
+        print(f"Deleted {deleted_pantry} pantry items")  # Debug log
+        
+        cursor.execute('DELETE FROM item_history WHERE user_id = ?', (user_id,))
+        deleted_history = cursor.rowcount
+        print(f"Deleted {deleted_history} history items")  # Debug log
+        
+        # Delete the user
+        cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        deleted_user = cursor.rowcount
+        print(f"Deleted user: {deleted_user} row(s)")  # Debug log
+            
+        conn.commit()
+        conn.close()
+        print(f"Successfully deleted user {user['username']}")  # Debug log
+        return jsonify({'success': True, 'message': 'User deleted successfully'})
+        
+    except sqlite3.Error as e:
+        print(f"Database error during user deletion: {e}")  # Debug log
+        conn.rollback()
+        conn.close()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 # Update existing endpoints to be user-specific
 @app.route('/grocery/items', methods=['GET'])
 def get_items():

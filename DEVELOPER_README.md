@@ -31,10 +31,23 @@ A quick reference for all common development, build, and deployment tasks for Pa
   ```
 
 ### 📦 Building for Release
-- **Build Android APK (release):**
+- **Build Android APK (universal):**
   ```bash
   flutter build apk --release
-  # Output: build/app/outputs/flutter-apk/app-release.apk
+  # Output: build/app/outputs/flutter-apk/app-release.apk (works on all devices)
+  ```
+- **Build ARM64 APK (recommended for modern devices):**
+  ```bash
+  flutter build apk --release --target-platform android-arm64
+  # Output: build/app/outputs/flutter-apk/app-release.apk (ARM64 only, smaller size)
+  ```
+- **Build split APKs (optimal - one per architecture):**
+  ```bash
+  flutter build apk --release --split-per-abi
+  # Outputs:
+  # • app-armeabi-v7a-release.apk (8.0MB) - Older devices
+  # • app-arm64-v8a-release.apk (8.5MB) - Modern devices (recommended)
+  # • app-x86_64-release.apk (8.6MB) - Emulators/Intel devices
   ```
 - **Build Android App Bundle (Play Store):**
   ```bash
@@ -59,6 +72,26 @@ A quick reference for all common development, build, and deployment tasks for Pa
 ### 🔥 Hot Reload/Restart
 - **Hot reload (while running):** Press `r` in terminal
 - **Hot restart:** Press `R` in terminal
+
+### 🏗️ Architecture-Specific Builds
+- **ARM64 (recommended):** Modern Android devices (2017+), better performance
+  ```bash
+  flutter build apk --release --target-platform android-arm64
+  ```
+- **ARMv7:** Older Android devices (pre-2017)
+  ```bash
+  flutter build apk --release --target-platform android-arm
+  ```
+- **x86_64:** Android emulators and Intel-based devices
+  ```bash
+  flutter build apk --release --target-platform android-x64
+  ```
+- **Universal:** Works on all devices but larger file size
+  ```bash
+  flutter build apk --release
+  ```
+
+**Recommendation:** Use ARM64 for most modern devices or split APKs for optimal distribution.
 
 ---
 
@@ -116,8 +149,12 @@ A quick reference for all common development, build, and deployment tasks for Pa
    flutter install --release
    
    # Method 2: Copy APK file
-   # APK location: build\app\outputs\flutter-apk\app-release.apk
+   # Universal APK: build\app\outputs\flutter-apk\app-release.apk
+   # ARM64 APK: build\app\outputs\flutter-apk\app-arm64-v8a-release.apk (recommended)
    # Transfer to phone and install manually
+   
+   # Method 3: Install specific architecture
+   adb install build\app\outputs\flutter-apk\app-arm64-v8a-release.apk
    ```
 
 ---
@@ -278,7 +315,7 @@ cp pantrybot.db backup/pantrybot_$(date +%Y%m%d).db
   ```bash
   flutter clean
   flutter pub get
-  flutter build apk --release
+  flutter build apk --release --target-platform android-arm64
   ```
 
 ### 🖥️ Windows-Specific Issues
@@ -315,11 +352,12 @@ cp pantrybot.db backup/pantrybot_$(date +%Y%m%d).db
 # Development cycle
 flutter pub get
 flutter run -d windows
-flutter build apk --release
+flutter build apk --release --target-platform android-arm64
 
 # Android testing
 flutter devices
 flutter install --release
+adb install build\app\outputs\flutter-apk\app-arm64-v8a-release.apk
 
 # Debugging
 flutter clean

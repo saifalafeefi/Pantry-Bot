@@ -63,7 +63,7 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt('userId') ?? 0;
-      final baseUrl = 'https://192.168.1.192:8443';
+      final baseUrl = 'https://pantrybot.anonstorage.org:8443';
       
       // Get notification preferences
       final daysAhead = prefs.getInt('notification_days_ahead') ?? 3;
