@@ -1,6 +1,6 @@
 # 🤖 PantryBot - Smart Kitchen Assistant
 
-![Version](https://img.shields.io/badge/version-1.4.1-green.svg)
+![Version](https://img.shields.io/badge/version-1.5.0-green.svg)
 
 A comprehensive Raspberry Pi and Flutter-based system for managing pantry items, recipes, and grocery lists. Perfect for families who want to stay organized in the kitchen!
 
@@ -14,6 +14,7 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
 - **👥 Multi-User Support**: Family accounts with individual preferences
 - **⚡ Quick Actions**: Swipe gestures and touch controls for lightning-fast interactions
 - **🔄 OTA Updates**: Automatic over-the-air app updates - no more manual APK distribution!
+- **🌙 Dark Mode**: Toggle between light and dark themes with persistent settings
 
 ## 🛠️ Installation & Setup
 
@@ -101,8 +102,11 @@ PantryBot now supports automatic updates! No more manual APK distribution.
 ### For Users
 - App automatically checks for updates on startup
 - Get notified when new versions are available
-- One-tap update installation
+- One-tap update installation with real-time progress
 - Manual update check via update button in app bar
+- Live debug logs during update process
+- Copy logs feature for troubleshooting
+- Works on OnePlus, Samsung, and all Android devices
 
 ### For Developers
 - Deploy updates instantly with deployment scripts
@@ -115,45 +119,43 @@ PantryBot now supports automatic updates! No more manual APK distribution.
 ### Quick Deployment
 ```powershell
 # Windows
-.\deploy_update.ps1 -Version "1.4.2"
+.\deploy_update.ps1 -Version "1.5.0"
 
 # Linux/Mac  
-./deploy_update.sh 1.4.2
+./deploy_update.sh 1.5.0
 ```
 
 ## 🔧 Recent Updates & Fixes
 
-**Navigation & User Experience Improvements:**
+**Version 1.5.0 - Major Feature Release:**
+
+- **🌙 Dark Mode Support**: Complete dark theme implementation with persistent settings
+- **🔄 Native OTA Updates**: Revolutionary over-the-air update system with OnePlus/Samsung compatibility
+- **📱 Enhanced UI**: Improved settings screen with theme toggle and about dialog
+- **🛡️ Advanced Security**: Native Android method channel bypasses device security restrictions
+- **📊 Real-time Debug Logs**: Live update progress with comprehensive error reporting
+- **⚡ Instant Theme Switching**: Seamless light/dark mode transitions with SharedPreferences
+
+**OTA Update System Breakthrough:**
+
+- Native Android method channel implementation for maximum device compatibility
+- Bypasses OnePlus security restrictions that blocked standard installation methods
+- Real-time download progress with scrollable debug terminal
+- Multiple fallback installation methods for different Android versions
+- Copy logs functionality for easy troubleshooting
+- Works flawlessly on OnePlus 13, Samsung A70, and other restrictive devices
+
+**Previous Updates (v1.4.x):**
 
 - Fixed login flow to properly navigate to main menu instead of bypassing it
 - Added suggestion deletion feature - users can remove incorrect autocomplete suggestions
 - Improved navigation consistency between login, register, and main app flows
 - Enhanced user control over suggestion history with confirmation dialogs
-
-**Authentication System Overhaul:**
-
 - Fixed password hashing iteration mismatch causing 500/401 login errors
 - Resolved database password hash corruption issues
-- Improved login error handling with better debugging information
-
-**Admin Panel Restoration:**
-
 - Recreated admin panel with expandable user list interface
-- Added admin button (shield icon) to main app interface for easy access
-- Admin can now view all users and their individual grocery items
-- Color-coded user status (admin vs regular users)
-
-**Database Schema Updates:**
-
 - Added missing `frequency` and `user_id` columns to item_history table
-- Fixed database compatibility issues with newer code versions
-- Improved item suggestion system with usage tracking
-
-**Performance Improvements:**
-
 - Switched to local Pi IP addressing for faster response times
-- Reduced connection timeouts and improved error handling
-- Better SSL certificate handling for development environments
 
 ## 📱 User Manual
 

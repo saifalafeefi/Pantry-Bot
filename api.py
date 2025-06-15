@@ -16,7 +16,7 @@ app.config['JSON_SORT_KEYS'] = False
 DB_PATH = 'pantrybot.db'
 
 # App version configuration
-APP_VERSION = "1.4.2"
+APP_VERSION = "1.5.0"
 
 def hash_password(password):
     """Hash a password for storing."""
@@ -578,5 +578,40 @@ def get_apk():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

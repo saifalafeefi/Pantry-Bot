@@ -274,8 +274,8 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
     DateTime selectedDate;
     try {
       selectedDate = item != null && item['expiry_date'] != null
-          ? DateTime.parse(item['expiry_date']) 
-          : DateTime.now().add(Duration(days: 7));
+        ? DateTime.parse(item['expiry_date']) 
+        : DateTime.now().add(Duration(days: 7));
     } catch (e) {
       print('Error parsing expiry date: $e');
       selectedDate = DateTime.now().add(Duration(days: 7));
@@ -452,14 +452,14 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
       if (itemId == null) {
         // Add new item
         response = await httpClient.post(
-          Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items'),
+        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items'),
           headers: {'Content-Type': 'application/json'},
           body: body,
         );
       } else {
         // Update existing item
-        response = await httpClient.put(
-          Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items/$itemId'),
+                  response = await httpClient.put(
+        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items/$itemId'),
           headers: {'Content-Type': 'application/json'},
           body: body,
         );

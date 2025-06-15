@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/notification_service.dart';
 import 'services/update_service.dart';
 
@@ -52,20 +53,23 @@ void main() async {
   final isAdmin = prefs.getBool('isAdmin') ?? false;
   final userId = prefs.getInt('userId') ?? 0;
   final username = prefs.getString('username') ?? '';
+  final isDarkMode = prefs.getBool('isDarkMode') ?? false;
 
   runApp(MyApp(
     isLoggedIn: isLoggedIn, 
     isAdmin: isAdmin,
     userId: userId,
     username: username,
+    isDarkMode: isDarkMode,
   ));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final bool isLoggedIn;
   final bool isAdmin;
   final int userId;
   final String username;
+  final bool isDarkMode;
 
   const MyApp({
     Key? key, 
@@ -73,18 +77,66 @@ class MyApp extends StatelessWidget {
     required this.isAdmin,
     this.userId = 0,
     this.username = '',
+    this.isDarkMode = false,
   }) : super(key: key);
+
+  @override
+  _MyAppState createState() => _MyAppState();
+  
+  static _MyAppState? of(BuildContext context) {
+    return context.findAncestorStateOfType<_MyAppState>();
+  }
+}
+
+class _MyAppState extends State<MyApp> {
+  late bool _isDarkMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _isDarkMode = widget.isDarkMode;
+  }
+
+  void toggleTheme() async {
+    setState(() {
+      _isDarkMode = !_isDarkMode;
+    });
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isDarkMode', _isDarkMode);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'PantryBot',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: isLoggedIn 
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: Colors.blue.shade50,
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+        ),
+      ),
+      darkTheme: ThemeData(
+        primarySwatch: Colors.blue,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: Colors.grey.shade900,
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.grey.shade800,
+          foregroundColor: Colors.white,
+        ),
+        cardTheme: CardTheme(
+          color: Colors.grey.shade800,
+        ),
+      ),
+      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      home: widget.isLoggedIn 
           ? MainMenuScreen(
-              isAdmin: isAdmin,
-              userId: userId,
-              username: username,
+              isAdmin: widget.isAdmin,
+              userId: widget.userId,
+              username: widget.username,
             ) 
           : LoginScreen(),
     );
@@ -128,14 +180,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   Future<void> _manualUpdateCheck() async {
-    bool hasUpdate = await _updateService.checkForUpdates();
-    if (hasUpdate) {
-      await _updateService.showUpdateDialog(context);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You are on the latest version')),
-      );
-    }
+    await _updateService.forceUpdateCheck(context);
   }
 
   Future<void> _showAboutDialog() async {
@@ -167,6 +212,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               SizedBox(height: 16),
               Text('🆕 NEW: Automatic OTA Updates!', 
                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('🌙 NEW: Dark Mode Available!', 
+                   style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold)),
             ],
           ),
           actions: [
@@ -192,11 +240,8 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.blue.shade50,
       appBar: AppBar(
         title: Text('PantryBot'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: Icon(Icons.info_outline),
@@ -243,7 +288,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade800,
+                  color: Theme.of(context).brightness == Brightness.dark 
+                      ? Colors.blue.shade300 
+                      : Colors.blue.shade800,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -252,7 +299,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 'Hello, ${widget.username}!',
                 style: TextStyle(
                   fontSize: 18,
-                  color: Colors.grey.shade700,
+                  color: Theme.of(context).brightness == Brightness.dark 
+                      ? Colors.grey.shade300 
+                      : Colors.grey.shade700,
                 ),
               ),
               SizedBox(height: 40),
@@ -329,6 +378,43 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       SizedBox(width: 15),
                       Text(
                         'Pantry Items',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              SizedBox(height: 20),
+              
+              // Settings Button
+              SizedBox(
+                width: double.infinity,
+                height: 80,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SettingsScreen(),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.settings, size: 32),
+                      SizedBox(width: 15),
+                      Text(
+                        'Settings',
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -1136,8 +1222,6 @@ class _PantryListState extends State<PantryList> {
       ),
     );
   }
-
-
 
   Future<void> _showDeleteConfirmation(Map<String, dynamic> item) async {
     final confirmed = await showDialog<bool>(

@@ -42,14 +42,84 @@ try {
     if ($env:DEPLOY_TO_SERVER -eq "1") {
         Write-Host "🚁 Deploying to server $ServerUser@$ServerDomain..." -ForegroundColor Yellow
         
-        # Upload api.py and APK to server
-        scp api.py "$ServerUser@$ServerDomain":/tmp/
-        scp "releases\pantrybot_v$Version.apk" "$ServerUser@$ServerDomain":/tmp/
+        # Check if files exist before uploading
+        Write-Host "🔍 Checking files..." -ForegroundColor Cyan
+        if (-not (Test-Path "api.py")) {
+            Write-Host "❌ api.py not found in current directory!" -ForegroundColor Red
+            Get-ChildItem . | Where-Object {$_.Name -like "*.py"} | ForEach-Object { Write-Host "Found: $($_.Name)" }
+            throw "api.py not found!"
+        }
+        Write-Host "✅ api.py found" -ForegroundColor Green
         
-        # Move files and restart service
-        ssh "$ServerUser@$ServerDomain" "sudo cp /tmp/api.py /home/$ServerUser/pantrybot/ && sudo cp /tmp/pantrybot_v$Version.apk /home/$ServerUser/pantrybot/ && sudo systemctl restart pantrybot-api"
+        $apkPath = "releases\pantrybot_v$Version.apk"
+        if (-not (Test-Path $apkPath)) {
+            Write-Host "❌ APK file not found: $apkPath" -ForegroundColor Red
+            Get-ChildItem releases\ | ForEach-Object { Write-Host "Found: $($_.Name)" }
+            throw "APK file not found: $apkPath"
+        }
+        Write-Host "✅ APK file found: $apkPath" -ForegroundColor Green
+        
+        # Upload api.py to home directory first
+        Write-Host "📤 Uploading api.py..." -ForegroundColor Cyan
+        $scpTarget = "$ServerUser@$ServerDomain" + ":/home/$ServerUser/"
+        & scp api.py $scpTarget
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to upload api.py (exit code: $LASTEXITCODE)"
+        }
+        
+        # Upload APK to home directory
+        Write-Host "📤 Uploading APK..." -ForegroundColor Cyan
+        & scp "releases\pantrybot_v$Version.apk" $scpTarget
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to upload APK (exit code: $LASTEXITCODE)"
+        }
+        
+        # Verify files were uploaded
+        Write-Host "🔍 Verifying upload..." -ForegroundColor Cyan
+        $fileCheck = ssh "$ServerUser@$ServerDomain" "ls -la /home/$ServerUser/api.py /home/$ServerUser/pantrybot_v$Version.apk"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Files not found on server after upload"
+        }
+        
+        # Move files to pantrybot directory
+        Write-Host "📁 Moving files to pantrybot directory..." -ForegroundColor Cyan
+        ssh "$ServerUser@$ServerDomain" "sudo cp /home/$ServerUser/api.py /home/$ServerUser/pantrybot/"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to move api.py"
+        }
+        
+        ssh "$ServerUser@$ServerDomain" "sudo cp /home/$ServerUser/pantrybot_v$Version.apk /home/$ServerUser/pantrybot/"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to move APK"
+        }
+        
+        # Restart service
+        Write-Host "🔄 Restarting service..." -ForegroundColor Cyan
+        ssh "$ServerUser@$ServerDomain" "sudo systemctl restart pantrybot-api"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to restart service"
+        }
+        
+        # Wait for service to start
+        Write-Host "⏳ Waiting for service to start..." -ForegroundColor Cyan
+        Start-Sleep -Seconds 3
+        
+        # Clean up temporary files in home directory
+        Write-Host "🧹 Cleaning up..." -ForegroundColor Cyan
+        ssh "$ServerUser@$ServerDomain" "rm -f /home/$ServerUser/api.py /home/$ServerUser/pantrybot_v$Version.apk"
         
         Write-Host "✅ Deployed to server successfully!" -ForegroundColor Green
+        
+        # Test the deployment
+        Write-Host "🧪 Testing deployment..." -ForegroundColor Cyan
+        $testResult = ssh "$ServerUser@$ServerDomain" "curl -s http://localhost:5000/api/version"
+        if ($testResult -match $Version) {
+            Write-Host "✅ Server is serving version $Version!" -ForegroundColor Green
+        } else {
+            Write-Host "⚠️  Server response: $testResult" -ForegroundColor Yellow
+            Write-Host "❌ Server test failed!" -ForegroundColor Red
+            throw "Deployment verification failed"
+        }
     } else {
         Write-Host "⚠️  Server deployment skipped. Set `$env:DEPLOY_TO_SERVER=1 to deploy automatically." -ForegroundColor Yellow
     }
