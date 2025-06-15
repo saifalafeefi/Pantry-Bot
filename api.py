@@ -57,6 +57,8 @@ def get_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         user_id INTEGER,
         priority INTEGER DEFAULT 0,
+        metric TEXT DEFAULT NULL,
+        amount_per_item TEXT DEFAULT NULL,
         FOREIGN KEY (user_id) REFERENCES users (id)
     )
     ''')
@@ -71,15 +73,31 @@ def get_db():
         entry_date TEXT NOT NULL,
         expiry_date TEXT NOT NULL,
         user_id INTEGER,
+        metric TEXT DEFAULT NULL,
+        amount_per_item TEXT DEFAULT NULL,
         FOREIGN KEY (user_id) REFERENCES users (id)
     )
     ''')
     
-    # Add user_id column to existing tables if it doesn't exist
+    # Add metric column to existing tables if it doesn't exist
     try:
-        conn.execute('ALTER TABLE items ADD COLUMN user_id INTEGER')
+        conn.execute('ALTER TABLE grocery_items ADD COLUMN metric TEXT DEFAULT NULL')
     except sqlite3.OperationalError:
-        pass  # Column already exists
+        pass
+    try:
+        conn.execute('ALTER TABLE items ADD COLUMN metric TEXT DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass
+    
+    # Add amount_per_item column to existing tables if it doesn't exist
+    try:
+        conn.execute('ALTER TABLE grocery_items ADD COLUMN amount_per_item TEXT DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE items ADD COLUMN amount_per_item TEXT DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass
     
     # Add item_history table
     conn.execute('''
@@ -88,10 +106,22 @@ def get_db():
         name TEXT NOT NULL,
         category TEXT NOT NULL,
         last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        frequency INTEGER DEFAULT 1,
-        UNIQUE(name, category)
+        frequency INTEGER DEFAULT 0,
+        user_id INTEGER,
+        metric TEXT DEFAULT NULL,
+        amount_per_item TEXT DEFAULT NULL,
+        UNIQUE(name, category, user_id)
     )
     ''')
+    
+    try:
+        conn.execute('ALTER TABLE item_history ADD COLUMN metric TEXT DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE item_history ADD COLUMN amount_per_item TEXT DEFAULT NULL')
+    except sqlite3.OperationalError:
+        pass
     
     # Insert default admin user if not exists
     cursor = conn.cursor()
@@ -244,6 +274,8 @@ def add_item():
     quantity = data.get('quantity', 1)
     category = data.get('category', '')
     user_id = data.get('user_id')
+    metric = data.get('metric')
+    amount_per_item = data.get('amount_per_item')
     
     if not name:
         print("Error: No name provided")  # Debug log
@@ -257,21 +289,23 @@ def add_item():
     try:
         # First update or insert into item_history
         cursor.execute('''
-            INSERT INTO item_history (name, category, user_id, last_used, frequency)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1)
+            INSERT INTO item_history (name, category, user_id, last_used, frequency, metric, amount_per_item)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1, ?, ?)
             ON CONFLICT(name, category, user_id) 
             DO UPDATE SET
                 last_used = CURRENT_TIMESTAMP,
-                frequency = frequency + 1
+                frequency = COALESCE(frequency, 0) + 1,
+                metric = excluded.metric,
+                amount_per_item = excluded.amount_per_item
             WHERE user_id = ?
-        ''', (name, category, user_id, user_id))
+        ''', (name, category, user_id, metric, amount_per_item, user_id))
         
         # Then insert the new grocery item
         cursor.execute('''
             INSERT INTO grocery_items 
-            (name, quantity, category, user_id, checked, created_at) 
-            VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
-        ''', (name, quantity, category, user_id))
+            (name, quantity, category, user_id, checked, created_at, metric, amount_per_item) 
+            VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, ?, ?)
+        ''', (name, quantity, category, user_id, metric, amount_per_item))
         
         new_id = cursor.lastrowid
         
@@ -335,24 +369,49 @@ def get_suggestions():
     conn = get_db()
     if is_admin:
         suggestions = conn.execute('''
-            SELECT DISTINCT name, category, MAX(frequency) as frequency 
+            SELECT DISTINCT name, category, MAX(COALESCE(frequency,0)) as use_count, metric, amount_per_item 
             FROM item_history 
             WHERE LOWER(name) LIKE ? 
-            GROUP BY name, category
-            ORDER BY frequency DESC, last_used DESC 
+            GROUP BY name, category, metric, amount_per_item
+            ORDER BY use_count DESC, last_used DESC 
             LIMIT 1000
         ''', (f'%{query}%',)).fetchall()
     else:
         suggestions = conn.execute('''
-            SELECT name, category, frequency 
+            SELECT name, category, COALESCE(frequency,0) as use_count, metric, amount_per_item
             FROM item_history 
             WHERE LOWER(name) LIKE ? AND user_id = ?
-            ORDER BY frequency DESC, last_used DESC 
+            ORDER BY use_count DESC, last_used DESC 
             LIMIT 5
         ''', (f'%{query}%', user_id)).fetchall()
     
     conn.close()
     return jsonify([dict(item) for item in suggestions])
+
+@app.route('/grocery/suggestions/<suggestion_name>/<suggestion_category>/<int:user_id>', methods=['DELETE'])
+def delete_suggestion(suggestion_name, suggestion_category, user_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Delete the specific suggestion from item_history
+        cursor.execute('''
+            DELETE FROM item_history 
+            WHERE name = ? AND category = ? AND user_id = ?
+        ''', (suggestion_name, suggestion_category, user_id))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'success': False, 'message': 'Suggestion not found'}), 404
+            
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Suggestion deleted successfully'})
+        
+    except Exception as e:
+        print(f"Delete suggestion error: {e}")
+        return jsonify({'success': False, 'message': 'Server error'}), 500
 
 @app.route('/users/migrate', methods=['POST'])
 def migrate_user_data():
@@ -369,15 +428,15 @@ def migrate_user_data():
     try:
         # Copy grocery items
         cursor.execute('''
-            INSERT INTO grocery_items (user_id, name, quantity, category, checked, created_at)
-            SELECT ?, name, quantity, category, checked, created_at
+            INSERT INTO grocery_items (user_id, name, quantity, category, checked, created_at, metric, amount_per_item)
+            SELECT ?, name, quantity, category, checked, created_at, metric, amount_per_item
             FROM grocery_items WHERE user_id = ?
         ''', (target_user_id, source_user_id))
         
         # Copy item history
         cursor.execute('''
-            INSERT INTO item_history (user_id, name, category, last_used, frequency)
-            SELECT ?, name, category, last_used, frequency
+            INSERT INTO item_history (user_id, name, category, last_used, frequency, metric, amount_per_item)
+            SELECT ?, name, category, last_used, frequency, metric, amount_per_item
             FROM item_history WHERE user_id = ?
         ''', (target_user_id, source_user_id))
         
@@ -405,7 +464,7 @@ def get_pantry_items():
         sort_by = 'expiry_date'
     
     items = conn.execute(f'''
-        SELECT id, name, type, quantity, entry_date, expiry_date
+        SELECT id, name, type, quantity, entry_date, expiry_date, metric, amount_per_item
         FROM items 
         WHERE user_id = ?
         ORDER BY {sort_by} ASC
@@ -426,11 +485,13 @@ def add_pantry_item():
     
     from datetime import datetime
     entry_date = datetime.now().strftime('%Y-%m-%d')
+    metric = data.get('metric')
+    amount_per_item = data.get('amount_per_item')
     
     cursor = conn.execute('''
-        INSERT INTO items (name, type, quantity, entry_date, expiry_date, user_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (data['name'], data['type'], data['quantity'], entry_date, data['expiry_date'], data['user_id']))
+        INSERT INTO items (name, type, quantity, entry_date, expiry_date, user_id, metric, amount_per_item)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (data['name'], data['type'], data['quantity'], entry_date, data['expiry_date'], data['user_id'], metric, amount_per_item))
     
     conn.commit()
     item_id = cursor.lastrowid
@@ -448,11 +509,13 @@ def update_pantry_item(item_id):
     
     conn = get_db()
     
+    metric = data.get('metric')
+    amount_per_item = data.get('amount_per_item')
     conn.execute('''
         UPDATE items 
-        SET name = ?, type = ?, quantity = ?, expiry_date = ?
+        SET name = ?, type = ?, quantity = ?, expiry_date = ?, metric = ?, amount_per_item = ?
         WHERE id = ?
-    ''', (data['name'], data['type'], data['quantity'], data['expiry_date'], item_id))
+    ''', (data['name'], data['type'], data['quantity'], data['expiry_date'], metric, amount_per_item, item_id))
     
     conn.commit()
     conn.close()

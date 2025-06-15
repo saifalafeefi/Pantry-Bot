@@ -11,6 +11,21 @@ import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'services/notification_service.dart';
 
+const Map<String, List<String>> categoryMetrics = {
+  'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
+  'Meats': ['Gram', 'Kg', 'Piece', 'Pack'],
+  'Vegetables': ['Gram', 'Kg', 'Piece', 'Bunch', 'Pack'],
+  'Fruits': ['Gram', 'Kg', 'Piece', 'Bunch', 'Pack'],
+  'Grains': ['Gram', 'Kg', 'Pack', 'Bag'],
+  'Sweets': ['Piece', 'Pack', 'Gram'],
+  'Oils': ['Litre', 'ml', 'Bottle'],
+  'Drinks': ['Litre', 'ml', 'Bottle', 'Can'],
+  'Medicine': ['Piece', 'Pack', 'ml'],
+  'Cleaning': ['Piece', 'Pack', 'Litre', 'ml'],
+  'Electronics': ['Piece', 'Pack'],
+  'Other': ['Piece', 'Pack'],
+};
+
 enum SortOption {
   newest,
   oldest,
@@ -64,12 +79,176 @@ class MyApp extends StatelessWidget {
       title: 'PantryBot',
       theme: ThemeData(primarySwatch: Colors.blue),
       home: isLoggedIn 
-          ? PantryList(
+          ? MainMenuScreen(
               isAdmin: isAdmin,
               userId: userId,
               username: username,
             ) 
           : LoginScreen(),
+    );
+  }
+}
+
+class MainMenuScreen extends StatelessWidget {
+  final bool isAdmin;
+  final int userId;
+  final String username;
+
+  const MainMenuScreen({
+    Key? key,
+    required this.isAdmin,
+    required this.userId,
+    required this.username,
+  }) : super(key: key);
+
+  Future<void> _logout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();  // Clear all stored preferences
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => LoginScreen())
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.blue.shade50,
+      appBar: AppBar(
+        title: Text('PantryBot'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        actions: [
+          if (isAdmin)
+            IconButton(
+              icon: Icon(Icons.admin_panel_settings),
+              onPressed: () {
+                                 Navigator.push(
+                   context,
+                   MaterialPageRoute(
+                     builder: (context) => AdminScreen(),
+                   ),
+                 );
+              },
+            ),
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: () => _logout(context),
+          ),
+        ],
+      ),
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.kitchen,
+                size: 100,
+                color: Colors.blue,
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Welcome to PantryBot',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade800,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 10),
+              Text(
+                'Hello, $username!',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              SizedBox(height: 40),
+              
+              // Grocery List Button
+              SizedBox(
+                width: double.infinity,
+                height: 80,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PantryList(
+                          isAdmin: isAdmin,
+                          userId: userId,
+                          username: username,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.shopping_cart, size: 32),
+                      SizedBox(width: 15),
+                      Text(
+                        'Grocery List',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              SizedBox(height: 20),
+              
+              // Pantry Items Button
+              SizedBox(
+                width: double.infinity,
+                height: 80,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PantryItemsScreen(
+                          userId: userId,
+                          isAdmin: isAdmin,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.inventory, size: 32),
+                      SizedBox(width: 15),
+                      Text(
+                        'Pantry Items',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -209,7 +388,7 @@ class _PantryListState extends State<PantryList> {
     }
   }
 
-  Future<void> addItem(String name, int quantity, String category) async {
+  Future<void> addItem(String name, int quantity, String category, [String? metric, String? amountPerItem]) async {
     print('Adding item: $name (qty: $quantity) for user: ${widget.userId}'); // Debug log
     
     final ioc = HttpClient()
@@ -222,6 +401,8 @@ class _PantryListState extends State<PantryList> {
         'quantity': quantity,
         'category': category,
         'user_id': widget.userId,
+        'metric': metric,
+        'amount_per_item': amountPerItem,
       };
       print('Sending request: $requestData'); // Debug log
 
@@ -257,33 +438,84 @@ class _PantryListState extends State<PantryList> {
 
   Future<void> toggleItem(int id, bool checked) async {
     HapticFeedback.selectionClick();
-    
     final ioc = HttpClient()
       ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
     final http = IOClient(ioc);
-
     try {
+      final item = items.firstWhere((item) => item['id'] == id);
       final response = await http.put(
         Uri.parse('$baseUrl/grocery/items/$id'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'checked': checked ? 1 : 0,
-          'name': items.firstWhere((item) => item['id'] == id)['name'],
-          'quantity': items.firstWhere((item) => item['id'] == id)['quantity'],
-          'category': items.firstWhere((item) => item['id'] == id)['category'],
+          'name': item['name'],
+          'quantity': item['quantity'],
+          'category': item['category'],
           'user_id': widget.userId,
+          'metric': item['metric'],
+          'amount_per_item': item['amount_per_item'],
         }),
       );
-      
       if (response.statusCode == 200) {
         setState(() {
-          var item = items.firstWhere((item) => item['id'] == id);
           item['checked'] = checked ? 1 : 0;
         });
         fetchItems();
+        // Pantry sync logic
+        if (checked) {
+          // Add to pantry
+          await _addToPantryFromGrocery(item);
+        } else {
+          // Remove from pantry
+          await _removeFromPantryByName(item['name']);
+        }
       }
     } catch (e) {
       print('Error toggling item: $e');
+    }
+  }
+
+  Future<void> _addToPantryFromGrocery(Map<String, dynamic> groceryItem) async {
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+    try {
+      final pantryItem = {
+        'name': groceryItem['name'],
+        'type': groceryItem['category'],
+        'quantity': groceryItem['quantity'],
+        'expiry_date': '', // Will be set by user later
+        'user_id': widget.userId,
+        'metric': groceryItem['metric'],
+        'amount_per_item': groceryItem['amount_per_item'],
+      };
+      await http.post(
+        Uri.parse('$baseUrl/pantry/items'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(pantryItem),
+      );
+    } catch (e) {
+      print('Error adding to pantry: $e');
+    }
+  }
+
+  Future<void> _removeFromPantryByName(String name) async {
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+    try {
+      // Fetch all pantry items for this user
+      final response = await http.get(Uri.parse('$baseUrl/pantry/items?user_id=${widget.userId}'));
+      if (response.statusCode == 200) {
+        final pantryItems = List<Map<String, dynamic>>.from(jsonDecode(response.body));
+        for (final item in pantryItems) {
+          if (item['name'] == name) {
+            await http.delete(Uri.parse('$baseUrl/pantry/items/${item['id']}'));
+          }
+        }
+      }
+    } catch (e) {
+      print('Error removing from pantry: $e');
     }
   }
 
@@ -304,9 +536,33 @@ class _PantryListState extends State<PantryList> {
 
   void _showAddItemDialog(String itemName, {String? defaultCategory}) {
     HapticFeedback.mediumImpact();
-    
     String selectedCategory = defaultCategory ?? 'Vegetables';
     int quantity = 1;
+    String? selectedMetric;
+    String? amountPerItem;
+
+    // Helper to fetch metric suggestion
+    Future<void> fetchMetricSuggestion(String name, String category) async {
+      if (name.isEmpty) return;
+      try {
+        final ioc = HttpClient()
+          ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+        final http = IOClient(ioc);
+        final response = await http.get(Uri.parse('$baseUrl/grocery/suggestions?query=${Uri.encodeComponent(name)}&user_id=${widget.userId}'));
+        if (response.statusCode == 200) {
+          final suggestions = jsonDecode(response.body);
+          if (suggestions is List && suggestions.isNotEmpty) {
+            final match = suggestions.firstWhere(
+              (s) => s['name'].toString().toLowerCase() == name.toLowerCase() && s['category'] == category,
+              orElse: () => null,
+            );
+            if (match != null && match['metric'] != null) {
+              selectedMetric = match['metric'];
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     showDialog(
       context: context,
@@ -337,31 +593,54 @@ class _PantryListState extends State<PantryList> {
                       ),
                     ],
                   ),
-                  SizedBox(height: 20),
-                  // Make sure this dropdown is working
+                  SizedBox(height: 16),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Amount per item',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.text,
+                    onChanged: (val) => amountPerItem = val,
+                  ),
+                  SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: selectedCategory,
                     decoration: InputDecoration(
                       labelText: 'Category',
                       border: OutlineInputBorder(),
                     ),
-                    items: [
-                      'Vegetables', 'Fruits', 'Dairy', 'Meats', 
-                      'Grains', 'Sweets', 'Oils', 'Electronics', 
-                      'Drinks', 'Medicine', 'Cleaning', 'Other'
-                    ].map((String value) {
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Text(value),
-                      );
-                    }).toList(),
+                    items: categoryMetrics.keys
+                        .map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
                     onChanged: (String? newValue) {
                       if (newValue != null) {
                         setState(() {
                           selectedCategory = newValue;
+                          selectedMetric = null;
                         });
                       }
                     },
+                  ),
+                  SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedMetric,
+                    decoration: InputDecoration(
+                      labelText: 'Metric',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: (categoryMetrics[selectedCategory] ?? ['Piece'])
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedMetric = value;
+                      });
+                    },
+                    isExpanded: true,
                   ),
                 ],
               ),
@@ -374,7 +653,7 @@ class _PantryListState extends State<PantryList> {
                   child: Text('Add'),
                   onPressed: () {
                     Navigator.of(context).pop();
-                    addItem(itemName, quantity, selectedCategory);
+                    addItem(itemName, quantity, selectedCategory, selectedMetric, amountPerItem);
                   },
                 ),
               ],
@@ -428,6 +707,8 @@ class _PantryListState extends State<PantryList> {
     String name = item['name'];
     int quantity = item['quantity'];
     String category = item['category'];
+    String? metric = item['metric'];
+    String? amountPerItem = item['amount_per_item'];
 
     showDialog(
       context: context,
@@ -462,22 +743,49 @@ class _PantryListState extends State<PantryList> {
                       ),
                     ],
                   ),
-                  SizedBox(height: 20),
+                  SizedBox(height: 16),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Amount per item',
+                      border: OutlineInputBorder(),
+                    ),
+                    controller: TextEditingController(text: amountPerItem ?? ''),
+                    keyboardType: TextInputType.text,
+                    onChanged: (val) => amountPerItem = val,
+                  ),
+                  SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: category,
                     decoration: InputDecoration(
                       labelText: 'Category',
                       border: OutlineInputBorder(),
                     ),
-                    items: [
-                      'Vegetables', 'Fruits', 'Dairy', 'Meats', 
-                      'Grains', 'Sweets', 'Oils', 'Electronics', 
-                      'Drinks', 'Medicine', 'Cleaning', 'Other'
-                    ].map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
-                      .toList(),
+                    items: categoryMetrics.keys
+                        .map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
+                        .toList(),
                     onChanged: (value) {
-                      if (value != null) setState(() => category = value);
+                      if (value != null) setState(() {
+                        category = value;
+                        metric = null;
+                      });
                     },
+                  ),
+                  SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: metric,
+                    decoration: InputDecoration(
+                      labelText: 'Metric',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: (categoryMetrics[category] ?? ['Piece'])
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        metric = value;
+                      });
+                    },
+                    isExpanded: true,
                   ),
                 ],
               ),
@@ -490,7 +798,7 @@ class _PantryListState extends State<PantryList> {
                   child: Text('Save'),
                   onPressed: () {
                     Navigator.of(context).pop();
-                    updateItem(item['id'], name, quantity, category);
+                    updateItem(item['id'], name, quantity, category, metric, amountPerItem);
                   },
                 ),
               ],
@@ -501,7 +809,7 @@ class _PantryListState extends State<PantryList> {
     );
   }
 
-  Future<void> updateItem(int id, String name, int quantity, String category) async {
+  Future<void> updateItem(int id, String name, int quantity, String category, [String? metric, String? amountPerItem]) async {
     final ioc = HttpClient()
       ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
     final http = IOClient(ioc);
@@ -515,6 +823,8 @@ class _PantryListState extends State<PantryList> {
           'quantity': quantity,
           'category': category,
           'checked': items.firstWhere((item) => item['id'] == id)['checked'],
+          'metric': metric,
+          'amount_per_item': amountPerItem,
         }),
       );
       if (response.statusCode == 200) {
@@ -708,7 +1018,18 @@ class _PantryListState extends State<PantryList> {
                 children: _suggestions.map((suggestion) => ListTile(
                   title: Text(suggestion['name']),
                   subtitle: Text(suggestion['category']),
-                  trailing: Text('Used ${suggestion['use_count']} times'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Used ${suggestion['use_count']} times'),
+                      SizedBox(width: 8),
+                      IconButton(
+                        icon: Icon(Icons.delete, color: Colors.red, size: 20),
+                        onPressed: () => _showDeleteSuggestionConfirmation(suggestion),
+                        tooltip: 'Delete suggestion',
+                      ),
+                    ],
+                  ),
                   onTap: () {
                     HapticFeedback.selectionClick();
                     _controller.text = suggestion['name'];
@@ -726,13 +1047,7 @@ class _PantryListState extends State<PantryList> {
     );
   }
 
-  Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();  // Clear all stored preferences
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => LoginScreen())
-    );
-  }
+
 
   Future<void> _showDeleteConfirmation(Map<String, dynamic> item) async {
     final confirmed = await showDialog<bool>(
@@ -757,6 +1072,65 @@ class _PantryListState extends State<PantryList> {
     
     if (confirmed == true) {
       deleteItem(item['id']);
+    }
+  }
+
+  Future<void> _showDeleteSuggestionConfirmation(Map<String, dynamic> suggestion) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Suggestion'),
+          content: Text('Are you sure you want to delete "${suggestion['name']}" (${suggestion['category']}) from your suggestion history?\n\nThis will remove it from autocomplete suggestions.'),
+          actions: [
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+    
+    if (confirmed == true) {
+      await _deleteSuggestion(suggestion);
+    }
+  }
+
+  Future<void> _deleteSuggestion(Map<String, dynamic> suggestion) async {
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/grocery/suggestions/${Uri.encodeComponent(suggestion['name'])}/${Uri.encodeComponent(suggestion['category'])}/${widget.userId}'),
+      );
+      
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Suggestion deleted successfully')),
+        );
+        // Refresh suggestions for current query
+        if (_controller.text.isNotEmpty) {
+          _fetchSuggestions(_controller.text);
+        } else {
+          setState(() => _suggestions = []);
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete suggestion')),
+        );
+      }
+    } catch (e) {
+      print('Error deleting suggestion: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting suggestion')),
+      );
     }
   }
 
@@ -909,11 +1283,35 @@ class _PantryListState extends State<PantryList> {
     );
   }
 
+  Future<void> _updatePantryExpiry(int id, DateTime expiry) async {
+    final ioc = HttpClient()
+      ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+    final http = IOClient(ioc);
+    try {
+      await http.put(
+        Uri.parse('$baseUrl/pantry/items/$id'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'expiry_date': '${expiry.year}-${expiry.month.toString().padLeft(2, '0')}-${expiry.day.toString().padLeft(2, '0')}',}),
+      );
+      fetchItems();
+    } catch (e) {
+      print('Error updating pantry expiry: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PantryBot Shopping List'),
+        title: Row(
+          children: [
+            Icon(Icons.shopping_cart, color: Colors.white),
+            SizedBox(width: 8),
+            Text('Grocery List', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline),
@@ -921,39 +1319,9 @@ class _PantryListState extends State<PantryList> {
             tooltip: 'Quick Actions Guide',
           ),
           IconButton(
-            icon: const Icon(Icons.kitchen),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PantryItemsScreen(
-                    userId: widget.userId,
-                    isAdmin: widget.isAdmin,
-                  ),
-                ),
-              );
-            },
-            tooltip: 'Pantry Items',
-          ),
-          IconButton(
             icon: const Icon(Icons.notifications),
             onPressed: _showNotificationSettings,
             tooltip: 'Notification Settings',
-          ),
-          if (widget.isAdmin)
-            IconButton(
-              icon: const Icon(Icons.admin_panel_settings),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => AdminScreen()),
-                );
-              },
-              tooltip: 'Admin Panel',
-            ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
           ),
           PopupMenuButton<SortOption>(
             icon: const Icon(Icons.filter_list),
@@ -1215,7 +1583,7 @@ class _PantryListState extends State<PantryList> {
                               },
                             ),
                             title: Text(
-                              '${item['name']} (${item['quantity']}) ($category)',
+                              '${item['name']} (${item['quantity']} × ${item['amount_per_item'] ?? ''} ${item['metric'] ?? ''}) (${item['category']})',
                               style: TextStyle(
                                 decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
                               ),
@@ -1290,7 +1658,7 @@ class GroceryItem extends StatelessWidget {
           onChanged: onCheckboxChanged,
         ),
         title: Text(
-          '${item['name']} (${item['quantity']}) (${item['category']})',
+          '${item['name']} (${item['quantity']} × ${item['amount_per_item'] ?? ''} ${item['metric'] ?? ''}) (${item['category']})',
           style: TextStyle(
             decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
           ),

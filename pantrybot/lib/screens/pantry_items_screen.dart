@@ -4,6 +4,21 @@ import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
 
+const Map<String, List<String>> categoryMetrics = {
+  'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
+  'Meats': ['Gram', 'Kg', 'Piece', 'Pack'],
+  'Vegetables': ['Gram', 'Kg', 'Piece', 'Bunch', 'Pack'],
+  'Fruits': ['Gram', 'Kg', 'Piece', 'Bunch', 'Pack'],
+  'Grains': ['Gram', 'Kg', 'Pack', 'Bag'],
+  'Sweets': ['Piece', 'Pack', 'Gram'],
+  'Oils': ['Litre', 'ml', 'Bottle'],
+  'Drinks': ['Litre', 'ml', 'Bottle', 'Can'],
+  'Medicine': ['Piece', 'Pack', 'ml'],
+  'Cleaning': ['Piece', 'Pack', 'Litre', 'ml'],
+  'Electronics': ['Piece', 'Pack'],
+  'Other': ['Piece', 'Pack'],
+};
+
 class PantryItemsScreen extends StatefulWidget {
   final int userId;
   final bool isAdmin;
@@ -107,8 +122,14 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Pantry Items'),
-        backgroundColor: Colors.blue,
+        title: Row(
+          children: [
+            Icon(Icons.inventory, color: Colors.white),
+            SizedBox(width: 8),
+            Text('Pantry Items', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        backgroundColor: Colors.orange,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -200,14 +221,15 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
                                 color: expiryColor,
                               ),
                               title: Text(
-                                item['name'],
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                                '${item['name']} (${item['quantity']} × ${item['amount_per_item'] ?? ''} ${item['metric'] ?? ''}) (${item['type']})',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
+                                ),
                               ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Category: ${item['type']}'),
-                                  Text('Quantity: ${item['quantity']}'),
                                   Text('Expires: ${item['expiry_date']}'),
                                 ],
                               ),
@@ -246,9 +268,41 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
     final nameController = TextEditingController(text: item?['name'] ?? '');
     final quantityController = TextEditingController(text: item?['quantity']?.toString() ?? '1');
     String selectedType = item?['type'] ?? 'Vegetables';
-    DateTime selectedDate = item != null 
-        ? DateTime.parse(item['expiry_date']) 
-        : DateTime.now().add(Duration(days: 7));
+    String? selectedMetric = item?['metric'];
+    String? amountPerItem = item?['amount_per_item'];
+    
+    DateTime selectedDate;
+    try {
+      selectedDate = item != null && item['expiry_date'] != null
+          ? DateTime.parse(item['expiry_date']) 
+          : DateTime.now().add(Duration(days: 7));
+    } catch (e) {
+      print('Error parsing expiry date: $e');
+      selectedDate = DateTime.now().add(Duration(days: 7));
+    }
+
+    // Helper to fetch metric suggestion
+    Future<void> fetchMetricSuggestion(String name, String type) async {
+      if (name.isEmpty) return;
+      try {
+        final ioc = HttpClient()
+          ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
+        final httpClient = IOClient(ioc);
+        final response = await httpClient.get(Uri.parse('https://pantrybot.anonstorage.org:8443/grocery/suggestions?query=${Uri.encodeComponent(name)}&user_id=${widget.userId}'));
+        if (response.statusCode == 200) {
+          final suggestions = jsonDecode(response.body);
+          if (suggestions is List && suggestions.isNotEmpty) {
+            final match = suggestions.firstWhere(
+              (s) => s['name'].toString().toLowerCase() == name.toLowerCase() && s['category'] == type,
+              orElse: () => null,
+            );
+            if (match != null && match['metric'] != null) {
+              selectedMetric = match['metric'];
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     showDialog(
       context: context,
@@ -265,6 +319,10 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
                     labelText: 'Item Name',
                     border: OutlineInputBorder(),
                   ),
+                  onChanged: (val) async {
+                    await fetchMetricSuggestion(val, selectedType);
+                    setDialogState(() {});
+                  },
                 ),
                 SizedBox(height: 16),
                 DropdownButtonFormField<String>(
@@ -273,14 +331,42 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
                     labelText: 'Category',
                     border: OutlineInputBorder(),
                   ),
-                  items: ['Dairy', 'Meat', 'Vegetables', 'Fruits', 'Grains', 'Sweets', 'Oils']
+                  items: categoryMetrics.keys
                       .map((type) => DropdownMenuItem(value: type, child: Text(type)))
                       .toList(),
                   onChanged: (value) {
                     setDialogState(() {
                       selectedType = value!;
+                      selectedMetric = null;
                     });
                   },
+                ),
+                SizedBox(height: 16),
+                TextField(
+                  decoration: InputDecoration(
+                    labelText: 'Amount per item',
+                    border: OutlineInputBorder(),
+                  ),
+                  controller: TextEditingController(text: amountPerItem ?? ''),
+                  keyboardType: TextInputType.text,
+                  onChanged: (val) => amountPerItem = val,
+                ),
+                SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedMetric,
+                  decoration: InputDecoration(
+                    labelText: 'Metric',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: (categoryMetrics[selectedType] ?? ['Piece'])
+                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedMetric = value;
+                    });
+                  },
+                  isExpanded: true,
                 ),
                 SizedBox(height: 16),
                 TextField(
@@ -326,6 +412,8 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
                   selectedType,
                   int.tryParse(quantityController.text) ?? 1,
                   selectedDate,
+                  selectedMetric,
+                  amountPerItem,
                 );
                 Navigator.pop(context);
               },
@@ -337,7 +425,7 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
     );
   }
 
-  Future<void> _saveItem(int? itemId, String name, String type, int quantity, DateTime expiryDate) async {
+  Future<void> _saveItem(int? itemId, String name, String type, int quantity, DateTime expiryDate, String? metric, String? amountPerItem) async {
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Please enter an item name')),
@@ -356,20 +444,22 @@ class _PantryItemsScreenState extends State<PantryItemsScreen> {
         'quantity': quantity,
         'expiry_date': '${expiryDate.year}-${expiryDate.month.toString().padLeft(2, '0')}-${expiryDate.day.toString().padLeft(2, '0')}',
         'user_id': widget.userId,
+        'metric': metric,
+        'amount_per_item': amountPerItem,
       });
 
       http.Response response;
       if (itemId == null) {
         // Add new item
         response = await httpClient.post(
-        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items'),
+          Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items'),
           headers: {'Content-Type': 'application/json'},
           body: body,
         );
       } else {
         // Update existing item
-                  response = await httpClient.put(
-        Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items/$itemId'),
+        response = await httpClient.put(
+          Uri.parse('https://pantrybot.anonstorage.org:8443/pantry/items/$itemId'),
           headers: {'Content-Type': 'application/json'},
           body: body,
         );

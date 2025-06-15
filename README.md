@@ -1,6 +1,6 @@
 # 🤖 PantryBot - Smart Kitchen Assistant
 
-![Version](https://img.shields.io/badge/version-1.4.0-green.svg)
+![Version](https://img.shields.io/badge/version-1.4.1-green.svg)
 
 A comprehensive Raspberry Pi and Flutter-based system for managing pantry items, recipes, and grocery lists. Perfect for families who want to stay organized in the kitchen!
 
@@ -95,6 +95,13 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
 
 ## 🔧 Recent Updates & Fixes
 
+**Navigation & User Experience Improvements:**
+
+- Fixed login flow to properly navigate to main menu instead of bypassing it
+- Added suggestion deletion feature - users can remove incorrect autocomplete suggestions
+- Improved navigation consistency between login, register, and main app flows
+- Enhanced user control over suggestion history with confirmation dialogs
+
 **Authentication System Overhaul:**
 
 - Fixed password hashing iteration mismatch causing 500/401 login errors
@@ -152,6 +159,7 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
 1. Start typing an item name
 2. Select from suggested items (shows usage history)
 3. Item will auto-fill with previous category
+4. **NEW**: Delete unwanted suggestions using the red trash icon next to each suggestion
 
 #### Quick Actions (NEW! ⚡)
 
@@ -324,11 +332,23 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
 - Ensure Pi is on same network
 - Verify API server is running (`python3 api.py`)
 
+**Login takes me to wrong screen:**
+
+- Make sure you have the latest app version
+- Login should go to main menu, not directly to grocery list
+- If stuck, logout and login again
+
 **Gestures not working:**
 
 - Update Flutter app to latest version
 - Restart the app
 - Check device touch sensitivity
+
+**Autocomplete suggestions wrong:**
+
+- Use the red trash icon next to suggestions to delete incorrect ones
+- Each user can manage their own suggestion history
+- Deleted suggestions won't reappear in autocomplete
 
 **Database issues:**
 

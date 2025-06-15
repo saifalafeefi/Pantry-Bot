@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => PantryList(
+            builder: (context) => MainMenuScreen(
               isAdmin: data['is_admin'] ?? false,
               userId: data['user_id'] ?? 0,
               username: username,

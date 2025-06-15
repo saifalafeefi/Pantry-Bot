@@ -106,7 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           // Navigate to main app
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
-              builder: (context) => PantryList(
+              builder: (context) => MainMenuScreen(
                 isAdmin: false,
                 userId: data['id'],
                 username: username,
