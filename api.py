@@ -16,7 +16,7 @@ app.config['JSON_SORT_KEYS'] = False
 DB_PATH = 'pantrybot.db'
 
 # App version configuration
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 
 def hash_password(password):
     """Hash a password for storing."""
@@ -564,5 +564,19 @@ def get_expiring_pantry_items():
 def get_version():
     return jsonify({'version': APP_VERSION})
 
+@app.route('/api/version', methods=['GET'])
+def get_api_version():
+    return jsonify({'version': APP_VERSION})
+
+@app.route('/api/apk', methods=['GET'])
+def get_apk():
+    apk_path = f"/home/smiley/pantrybot/pantrybot_v{APP_VERSION}.apk"
+    try:
+        return send_file(apk_path, as_attachment=True, download_name=f"pantrybot_v{APP_VERSION}.apk")
+    except FileNotFoundError:
+        return jsonify({'error': 'APK file not found'}), 404
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 
+
+

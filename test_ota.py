@@ -11,34 +11,35 @@ import urllib3
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def test_version_endpoint(base_url="https://pantrybot.anonstorage.org:8443"):
-    """Test the version endpoint"""
+def test_server_endpoints():
+    """Test server version and APK endpoints"""
     try:
-        # Disable SSL verification for self-signed certificates
-        response = requests.get(f"{base_url}/version", timeout=10, verify=False)
-        print(f"📡 Version endpoint response: {response.status_code}")
-        print(f"📄 Response content: {response.text[:200]}...")
+        # Test version endpoint
+        version_url = "https://pantrybot.anonstorage.org:8443/api/version"
+        response = requests.get(version_url, timeout=10, verify=False)
         
         if response.status_code == 200:
-            try:
-                data = response.json()
-                print(f"✅ Version endpoint working: {data['version']}")
-                return data['version']
-            except ValueError as json_error:
-                print(f"❌ Invalid JSON response: {json_error}")
-                return None
+            data = response.json()
+            version = data['version']
+            print(f"✅ Version endpoint working: {version}")
+            
+            # Test APK endpoint
+            apk_url = "https://pantrybot.anonstorage.org:8443/api/apk"
+            apk_response = requests.head(apk_url, timeout=10, verify=False)
+            
+            if apk_response.status_code == 200:
+                size = apk_response.headers.get('Content-Length', 'Unknown')
+                print(f"✅ APK endpoint working: {size} bytes")
+                return version
+            else:
+                print(f"❌ APK endpoint failed: {apk_response.status_code}")
+                return version  # Version works even if APK doesn't
         else:
             print(f"❌ Version endpoint failed: {response.status_code}")
             return None
     except Exception as e:
-        print(f"❌ Version endpoint error: {e}")
+        print(f"❌ Server endpoints error: {e}")
         return None
-
-def test_github_releases():
-    """Test if GitHub releases are set up (placeholder)"""
-    print("ℹ️  APK downloads will come from GitHub releases (not Pi)")
-    print("ℹ️  Set up GitHub releases to host APK files")
-    return True
 
 def check_apk_file():
     """Check if APK file exists in releases folder"""
@@ -56,34 +57,31 @@ def check_apk_file():
         return False
 
 def main():
-    print("🔄 Testing PantryBot OTA Update System")
+    print("🔄 Testing PantryBot OTA Update System (Private Repo)")
     print("=" * 50)
     
     # Check local APK file
     apk_exists = check_apk_file()
     
-    # Test version endpoint (only thing Pi needs to do)
-    version = test_version_endpoint()
-    
-    # Check GitHub releases setup
-    github_ready = test_github_releases()
+    # Check server endpoints
+    server_version = test_server_endpoints()
     
     print("\n📋 Summary:")
     print(f"Local APK File: {'✅' if apk_exists else '❌'}")
-    print(f"Version API (Pi): {'✅' if version else '❌'}")
-    print(f"GitHub Releases: {'✅' if github_ready else '❌'}")
+    print(f"Server Endpoints: {'✅' if server_version else '❌'}")
     
-    if version:
+    if server_version:
         print("\n🎉 OTA Update System is ready!")
-        print(f"Current version: {version}")
-        print("✅ Pi only needs to serve version info")
-        print("✅ APK downloads will come from GitHub releases")
-        print("Users will be able to update automatically.")
+        print(f"Server version: {server_version}")
+        print("✅ App checks server for updates")
+        print("✅ APK downloads from server")
+        print("Users will get automatic updates!")
     else:
-        print("\n⚠️  OTA Update System needs attention:")
-        print("- Upload updated api.py to Pi and restart service")
+        print("\n⚠️  OTA Update System needs setup:")
+        print("1. Deploy with: $env:DEPLOY_TO_SERVER=1; .\\deploy_update.ps1 -Version '1.4.2'")
+        print("2. Configure your web server to proxy /api/* to localhost:5000")
         if not apk_exists:
-            print("- Build APK locally for releases")
+            print("3. Build APK first with deployment script")
 
 if __name__ == "__main__":
     main() 

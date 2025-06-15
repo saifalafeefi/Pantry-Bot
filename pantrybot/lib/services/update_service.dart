@@ -9,18 +9,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 class UpdateService {
-  static const String baseUrl = 'https://pantrybot.anonstorage.org:8443';
-  static const String versionEndpoint = '/version';
-  static const String apkDownloadUrl = 'https://github.com/yourusername/Pantry-Bot/releases/latest/download/pantrybot.apk'; // You'll update this
+  static const String githubApiUrl = 'https://api.github.com/repos/saifalafeefi/Pantry-Bot/releases/latest';
+  static const String apkDownloadUrl = 'https://github.com/saifalafeefi/Pantry-Bot/releases/latest/download/pantrybot.apk';
   
   final Dio _dio = Dio();
 
   UpdateService() {
     // Configure Dio to accept self-signed certificates
-    (_dio.httpClientAdapter as DefaultHttpClientAdapter).onHttpClientCreate = (HttpClient client) {
-      client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
-      return client;
-    };
+    _dio.options.connectTimeout = Duration(seconds: 10);
+    _dio.options.receiveTimeout = Duration(seconds: 10);
   }
 
   Future<bool> checkForUpdates() async {
@@ -29,12 +26,29 @@ class UpdateService {
       PackageInfo packageInfo = await PackageInfo.fromPlatform();
       String currentVersion = packageInfo.version;
       
-      // Get server version
-      Response response = await _dio.get('$baseUrl$versionEndpoint');
-      String serverVersion = response.data['version'];
+      // For private repos, we'll use a simple version check against your Pi
+      // This is easier than dealing with GitHub tokens in the app
+      Response response = await _dio.get(
+        'https://pantrybot.anonstorage.org:8443/api/version',
+        options: Options(
+          validateStatus: (status) => status! < 500,
+        ),
+      );
+      
+      String latestVersion;
+      if (response.statusCode == 200 && response.data is Map) {
+        latestVersion = response.data['version'];
+      } else {
+        // Fallback: assume current version is latest if can't check
+        print('Could not check for updates, assuming current version is latest');
+        return false;
+      }
+      
+      print('Current version: $currentVersion');
+      print('Latest version: $latestVersion');
       
       // Compare versions
-      return _isNewerVersion(serverVersion, currentVersion);
+      return _isNewerVersion(latestVersion, currentVersion);
     } catch (e) {
       print('Error checking for updates: $e');
       return false;
@@ -108,9 +122,9 @@ class UpdateService {
       Directory? downloadsDir = await getExternalStorageDirectory();
       String apkPath = '${downloadsDir!.path}/pantrybot_update.apk';
 
-      // Download APK
+      // Download APK from your server (easier for private repos)
       await _dio.download(
-        apkDownloadUrl,
+        'https://pantrybot.anonstorage.org:8443/api/apk',
         apkPath,
         onReceiveProgress: (received, total) {
           if (total != -1) {

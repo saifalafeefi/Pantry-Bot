@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
@@ -137,6 +138,57 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     }
   }
 
+  Future<void> _showAboutDialog() async {
+    PackageInfo packageInfo = await PackageInfo.fromPlatform();
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.kitchen, color: Colors.blue),
+              SizedBox(width: 10),
+              Text('About PantryBot'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Version: ${packageInfo.version}', 
+                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('Build: ${packageInfo.buildNumber}'),
+              SizedBox(height: 16),
+              Text('Smart Kitchen Assistant'),
+              SizedBox(height: 8),
+              Text('Manage your pantry, grocery lists, and recipes with ease!'),
+              SizedBox(height: 16),
+              Text('🆕 NEW: Automatic OTA Updates!', 
+                   style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: Text('Check for Updates'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _manualUpdateCheck();
+              },
+            ),
+            TextButton(
+              child: Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,6 +198,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: Icon(Icons.info_outline),
+            onPressed: _showAboutDialog,
+            tooltip: 'About',
+          ),
           IconButton(
             icon: Icon(Icons.system_update),
             onPressed: _manualUpdateCheck,

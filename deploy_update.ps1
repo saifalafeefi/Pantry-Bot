@@ -42,11 +42,12 @@ try {
     if ($env:DEPLOY_TO_SERVER -eq "1") {
         Write-Host "🚁 Deploying to server $ServerUser@$ServerDomain..." -ForegroundColor Yellow
         
-        # Upload api.py to server
+        # Upload api.py and APK to server
         scp api.py "$ServerUser@$ServerDomain":/tmp/
+        scp "releases\pantrybot_v$Version.apk" "$ServerUser@$ServerDomain":/tmp/
         
-        # Move api.py and restart service
-        ssh "$ServerUser@$ServerDomain" "sudo cp /tmp/api.py /home/$ServerUser/pantrybot/ && sudo systemctl restart pantrybot-api"
+        # Move files and restart service
+        ssh "$ServerUser@$ServerDomain" "sudo cp /tmp/api.py /home/$ServerUser/pantrybot/ && sudo cp /tmp/pantrybot_v$Version.apk /home/$ServerUser/pantrybot/ && sudo systemctl restart pantrybot-api"
         
         Write-Host "✅ Deployed to server successfully!" -ForegroundColor Green
     } else {
@@ -55,9 +56,11 @@ try {
 
     Write-Host "✅ Deployment complete!" -ForegroundColor Green
     Write-Host "📱 APK location: releases\pantrybot_v$Version.apk" -ForegroundColor Cyan
-    Write-Host "🔗 Update URL: https://$ServerDomain`:8443/apk" -ForegroundColor Cyan
     Write-Host "📋 Version: $Version" -ForegroundColor Cyan
     Write-Host "🎉 Ready for OTA updates!" -ForegroundColor Green
+    Write-Host "" -ForegroundColor White
+    Write-Host "🚀 Next Steps:" -ForegroundColor Yellow
+    Write-Host "git add . && git commit -m 'Version $Version' && git push" -ForegroundColor White
 
 } catch {
     Write-Host "❌ Deployment failed: $($_.Exception.Message)" -ForegroundColor Red
