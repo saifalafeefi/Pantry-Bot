@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import sqlite3
 from datetime import datetime
 import hashlib
 import secrets
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -13,6 +14,9 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['JSON_SORT_KEYS'] = False
 
 DB_PATH = 'pantrybot.db'
+
+# App version configuration
+APP_VERSION = "1.4.1"
 
 def hash_password(password):
     """Hash a password for storing."""
@@ -555,6 +559,10 @@ def get_expiring_pantry_items():
     
     conn.close()
     return jsonify([dict(item) for item in expiring_items])
+
+@app.route('/version', methods=['GET'])
+def get_version():
+    return jsonify({'version': APP_VERSION})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 

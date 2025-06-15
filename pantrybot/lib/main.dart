@@ -10,6 +10,7 @@ import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'services/notification_service.dart';
+import 'services/update_service.dart';
 
 const Map<String, List<String>> categoryMetrics = {
   'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
@@ -89,9 +90,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class MainMenuScreen extends StatelessWidget {
+class MainMenuScreen extends StatefulWidget {
   final bool isAdmin;
-  final int userId;
+  final int userId;  
   final String username;
 
   const MainMenuScreen({
@@ -101,12 +102,39 @@ class MainMenuScreen extends StatelessWidget {
     required this.username,
   }) : super(key: key);
 
+  @override
+  _MainMenuScreenState createState() => _MainMenuScreenState();
+}
+
+class _MainMenuScreenState extends State<MainMenuScreen> {
+  final UpdateService _updateService = UpdateService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for updates after the widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateService.checkForUpdatesOnStart(context);
+    });
+  }
+
   Future<void> _logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();  // Clear all stored preferences
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => LoginScreen())
     );
+  }
+
+  Future<void> _manualUpdateCheck() async {
+    bool hasUpdate = await _updateService.checkForUpdates();
+    if (hasUpdate) {
+      await _updateService.showUpdateDialog(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You are on the latest version')),
+      );
+    }
   }
 
   @override
@@ -118,7 +146,12 @@ class MainMenuScreen extends StatelessWidget {
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
-          if (isAdmin)
+          IconButton(
+            icon: Icon(Icons.system_update),
+            onPressed: _manualUpdateCheck,
+            tooltip: 'Check for Updates',
+          ),
+          if (widget.isAdmin)
             IconButton(
               icon: Icon(Icons.admin_panel_settings),
               onPressed: () {
@@ -159,7 +192,7 @@ class MainMenuScreen extends StatelessWidget {
               ),
               SizedBox(height: 10),
               Text(
-                'Hello, $username!',
+                'Hello, ${widget.username}!',
                 style: TextStyle(
                   fontSize: 18,
                   color: Colors.grey.shade700,
@@ -177,9 +210,9 @@ class MainMenuScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (context) => PantryList(
-                          isAdmin: isAdmin,
-                          userId: userId,
-                          username: username,
+                          isAdmin: widget.isAdmin,
+                          userId: widget.userId,
+                          username: widget.username,
                         ),
                       ),
                     );
@@ -218,8 +251,8 @@ class MainMenuScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (context) => PantryItemsScreen(
-                          userId: userId,
-                          isAdmin: isAdmin,
+                          userId: widget.userId,
+                          isAdmin: widget.isAdmin,
                         ),
                       ),
                     );

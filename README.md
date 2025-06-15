@@ -13,6 +13,7 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
 - **📊 Item Tracking**: Track pantry items with expiration dates
 - **👥 Multi-User Support**: Family accounts with individual preferences
 - **⚡ Quick Actions**: Swipe gestures and touch controls for lightning-fast interactions
+- **🔄 OTA Updates**: Automatic over-the-air app updates - no more manual APK distribution!
 
 ## 🛠️ Installation & Setup
 
@@ -92,6 +93,33 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
    flutter run
    # Or build for release: flutter build apk
    ```
+
+## 🔄 OTA (Over-The-Air) Updates
+
+PantryBot now supports automatic updates! No more manual APK distribution.
+
+### For Users
+- App automatically checks for updates on startup
+- Get notified when new versions are available
+- One-tap update installation
+- Manual update check via update button in app bar
+
+### For Developers
+- Deploy updates instantly with deployment scripts
+- Automatic version management
+- Server-side APK hosting
+- Rollback capabilities
+
+**📖 Full OTA Documentation:** [README_OTA_UPDATES.md](./README_OTA_UPDATES.md)
+
+### Quick Deployment
+```powershell
+# Windows
+.\deploy_update.ps1 -Version "1.4.2"
+
+# Linux/Mac  
+./deploy_update.sh 1.4.2
+```
 
 ## 🔧 Recent Updates & Fixes
 
