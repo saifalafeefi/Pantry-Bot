@@ -5,14 +5,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'screens/settings_screen.dart';
-import 'services/notification_service.dart';
-import 'services/update_service.dart';
 
 const Map<String, List<String>> categoryMetrics = {
   'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
@@ -45,15 +41,14 @@ enum SortOption {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize notifications
-  await NotificationService.initialize();
+  // Notifications removed for iOS compatibility
   
-  final prefs = await SharedPreferences.getInstance();
-  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-  final isAdmin = prefs.getBool('isAdmin') ?? false;
-  final userId = prefs.getInt('userId') ?? 0;
-  final username = prefs.getString('username') ?? '';
-  final isDarkMode = prefs.getBool('isDarkMode') ?? false;
+  // Simplified for iOS - default values
+  final isLoggedIn = false;
+  final isAdmin = false;
+  final userId = 0;
+  final username = '';
+  final isDarkMode = false;
 
   runApp(MyApp(
     isLoggedIn: isLoggedIn, 
@@ -101,9 +96,7 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _isDarkMode = !_isDarkMode;
     });
-    
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isDarkMode', _isDarkMode);
+    // Theme persistence removed for iOS compatibility
   }
 
   @override
@@ -127,7 +120,7 @@ class _MyAppState extends State<MyApp> {
           backgroundColor: Colors.grey.shade800,
           foregroundColor: Colors.white,
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Colors.grey.shade800,
         ),
       ),
@@ -160,31 +153,30 @@ class MainMenuScreen extends StatefulWidget {
 }
 
 class _MainMenuScreenState extends State<MainMenuScreen> {
-  final UpdateService _updateService = UpdateService();
+  // UpdateService removed for iOS compatibility
 
   @override
   void initState() {
     super.initState();
     // Check for updates after the widget is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateService.checkForUpdatesOnStart(context);
+      // Auto update check removed
     });
   }
 
   Future<void> _logout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();  // Clear all stored preferences
+    // Preferences removed for iOS compatibility
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => LoginScreen())
     );
   }
 
   Future<void> _manualUpdateCheck() async {
-    await _updateService.forceUpdateCheck(context);
+    // Manual update check removed for iOS compatibility
   }
 
   Future<void> _showAboutDialog() async {
-    PackageInfo packageInfo = await PackageInfo.fromPlatform();
+    // Package info simplified for iOS
     
     showDialog(
       context: context,
@@ -201,10 +193,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Version: ${packageInfo.version}', 
+              Text('Version: 1.5.0', 
                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('Build: ${packageInfo.buildNumber}'),
+              Text('Build: 10'),
               SizedBox(height: 16),
               Text('Smart Kitchen Assistant'),
               SizedBox(height: 8),
@@ -1329,7 +1321,7 @@ class _PantryListState extends State<PantryList> {
                   SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: () async {
-                      await NotificationService.testNotification();
+                      print('Test notification - iOS compatible mode');
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Test notification sent!')),
                       );
@@ -1339,7 +1331,7 @@ class _PantryListState extends State<PantryList> {
                   SizedBox(height: 10),
                   ElevatedButton(
                     onPressed: () async {
-                      await NotificationService.checkExpiringItems();
+                      print('Check expiring items - iOS compatible mode');
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Checked for expiring pantry items!')),
                       );

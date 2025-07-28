@@ -1,4 +1,3 @@
-# In ios/.gitignore, replace the content with:
 **/dgph
 *.mode1v3
 *.mode2v3
@@ -27,10 +26,6 @@ Flutter/flutter_assets/
 Flutter/flutter_export_environment.sh
 ServiceDefinitions.json
 Runner/GeneratedPluginRegistrant.*
-**/build/
-**/*.xcarchive
-**/Runner.xcarchive/
-**/DWARF/
 
 # Exceptions to above rules.
 !default.mode1v3

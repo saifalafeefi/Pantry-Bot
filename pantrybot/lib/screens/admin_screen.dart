@@ -3,7 +3,6 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class AdminScreen extends StatefulWidget {
   @override
@@ -25,8 +24,6 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _getCurrentUserId() async {
-    final prefs = await SharedPreferences.getInstance();
-    _currentUserId = prefs.getInt('userId');
   }
 
   Future<void> _fetchUsers() async {

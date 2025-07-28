@@ -214,32 +214,49 @@ A quick reference for all common development, build, and deployment tasks for Pa
   ```
 
 ### 🍏 iOS Export (Mac Only)
+
+**IMPORTANT:** If iOS project is missing or corrupted, regenerate it:
+```bash
+# Remove iOS directory if it exists
+rm -rf ios
+
+# Regenerate clean iOS project
+flutter create --platforms=ios .
+```
+
 1. **Version Management**
    - Use `bump_version.sh` script to update version numbers:
      ```bash
      ./bump_version.sh <version_name> <build_number>
-     # Example: ./bump_version.sh 1.3.2 9
+     # Example: ./bump_version.sh 1.5.0 17
      ```
 
 2. **Xcode Requirements**
+   - **Required:** Apple Developer Account ($99/year)
    - **Preferred:** Xcode 16+ with iOS 18 SDK for latest TestFlight features
    - **Minimum:** Xcode 15.2+ with iOS 17.2 SDK for basic TestFlight submissions
-   - **macOS Compatibility:**
-     - 2017 Intel Macs: Maximum Xcode 15.4 (requires macOS Sonoma upgrade)
-     - macOS Ventura: Maximum Xcode 15.2 via [Apple Developer Downloads](https://developer.apple.com/downloads)
-     - macOS Sonoma: Maximum Xcode 15.4 via Mac App Store
-     - macOS Sequoia: Xcode 16+ via Mac App Store
 
-3. **Build & Archive in Xcode:**
+3. **Bundle Identifier Setup (Critical)**
    - Open: `open ios/Runner.xcworkspace`
-   - Select "Any iOS Device (arm64)" as build target
-   - Product > Archive
-   - Distribute App > App Store Connect > Upload
+   - Select **Runner target** → **Signing & Capabilities**
+   - **Bundle Identifier:** Change from `com.example.pantrybot` to `com.saifalafeefi.pantrybot`
+   - **Team:** Select "7G6BL76L64"
+   - **Automatically manage signing:** Keep ENABLED
 
-4. **TestFlight Management:**
+4. **Build & Archive for TestFlight:**
+   - In Xcode: Select "Any iOS Device (arm64)" as build target
+   - **Product → Archive**
+   - **Distribute App → App Store Connect → Upload**
+   - **CRITICAL:** Must use Distribution certificate (not Development) for TestFlight
+
+5. **TestFlight Management:**
    - Go to [App Store Connect](https://appstoreconnect.apple.com)
    - Navigate to TestFlight section
-   - Add testers or create new TestFlight group
+   - Add internal testers to existing app with bundle ID `com.saifalafeefi.pantrybot`
+
+6. **Privacy Manifest (2024 Requirement):**
+   - In Xcode: Right-click Runner folder → New File → Resource → App Privacy
+   - Create `PrivacyInfo.xcprivacy` file (required for App Store submission)
 
 ---
 

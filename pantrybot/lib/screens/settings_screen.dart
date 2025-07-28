@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import '../main.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -21,17 +19,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _isDarkMode = prefs.getBool('isDarkMode') ?? false;
     });
   }
 
   Future<void> _loadAppInfo() async {
-    PackageInfo packageInfo = await PackageInfo.fromPlatform();
     setState(() {
-      _version = packageInfo.version;
-      _buildNumber = packageInfo.buildNumber;
     });
   }
 
