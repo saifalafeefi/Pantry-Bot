@@ -9,6 +9,7 @@ import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'screens/settings_screen.dart';
+import 'package:updraft_sdk_flutter/updraft_sdk_flutter.dart';
 
 const Map<String, List<String>> categoryMetrics = {
   'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
@@ -90,6 +91,12 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _isDarkMode = widget.isDarkMode;
+    
+    // Initialize Updraft SDK for automatic iOS updates
+    UpdraftSdk.start(
+      sdkKey: "77448ae771054537b2a617cfef129419",  // API Key as SDK Key
+      appKey: "d05a3d6dfffb4836a4c8f7c4482ff6a7",   // App Key from dashboard
+    );
   }
 
   void toggleTheme() async {

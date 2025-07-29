@@ -227,6 +227,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.2"
+  plugin_platform_interface:
+    dependency: transitive
+    description:
+      name: plugin_platform_interface
+      sha256: "4820fbfdb9478b1ebae27888254d445073732dae3d6ea81f0b7e06d5dedc3f02"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.8"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -288,6 +296,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
+  updraft_sdk_flutter:
+    dependency: "direct main"
+    description:
+      name: updraft_sdk_flutter
+      sha256: ab80ad96d06ddba2283cd531aceaf23d881c358e4654369f6fe34beebae6d0fc
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.2"
   vector_math:
     dependency: transitive
     description:
