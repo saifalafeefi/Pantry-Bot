@@ -340,12 +340,14 @@ def update_item(item_id):
     data = request.json
     conn = get_db()
     conn.execute(
-        'UPDATE grocery_items SET name = ?, quantity = ?, category = ?, checked = ? WHERE id = ?',
+        'UPDATE grocery_items SET name = ?, quantity = ?, category = ?, checked = ?, metric = ?, amount_per_item = ? WHERE id = ?',
         (
             data['name'],
             data.get('quantity', 1),
             data.get('category', 'Vegetables'),
             data.get('checked', 0),
+            data.get('metric'),
+            data.get('amount_per_item'),
             item_id
         )
     )
@@ -578,40 +580,3 @@ def get_apk():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
