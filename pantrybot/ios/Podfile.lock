@@ -1,0 +1,23 @@
+PODS:
+  - Flutter (1.0.0)
+  - UpdraftSDK (0.5.8)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - UpdraftSDK
+
+SPEC REPOS:
+  trunk:
+    - UpdraftSDK
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+
+SPEC CHECKSUMS:
+  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  UpdraftSDK: 3723c040080fa4be73fdf56dd74e8ae54522ebf8
+
+PODFILE CHECKSUM: db9ffd7c2986b7800b59059c34a3a66a7cc2c9eb
+
+COCOAPODS: 1.16.2
