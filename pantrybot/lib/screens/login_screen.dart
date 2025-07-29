@@ -4,6 +4,7 @@ import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import 'register_screen.dart';
 import '../config/api_config.dart';
@@ -69,6 +70,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         
+        // Save login state to SharedPreferences for persistence
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isLoggedIn', true);
+        await prefs.setBool('isAdmin', data['is_admin'] ?? false);
+        await prefs.setInt('userId', data['user_id'] ?? 0);
+        await prefs.setString('username', username);
 
         Navigator.pushReplacement(
           context,

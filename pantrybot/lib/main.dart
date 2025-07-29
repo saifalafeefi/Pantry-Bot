@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
@@ -41,14 +42,13 @@ enum SortOption {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Notifications removed for iOS compatibility
-  
-  // Simplified for iOS - default values
-  final isLoggedIn = false;
-  final isAdmin = false;
-  final userId = 0;
-  final username = '';
-  final isDarkMode = false;
+  // Load saved login state from SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+  final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+  final isAdmin = prefs.getBool('isAdmin') ?? false;
+  final userId = prefs.getInt('userId') ?? 0;
+  final username = prefs.getString('username') ?? '';
+  final isDarkMode = prefs.getBool('isDarkMode') ?? false;
 
   runApp(MyApp(
     isLoggedIn: isLoggedIn, 
@@ -165,7 +165,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    // Preferences removed for iOS compatibility
+    // Clear saved login state from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedIn', false);
+    await prefs.remove('isAdmin');
+    await prefs.remove('userId');
+    await prefs.remove('username');
+    
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => LoginScreen())
     );
