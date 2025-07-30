@@ -4,6 +4,7 @@ import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -96,6 +97,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final data = jsonDecode(response.body);
         if (data['success']) {
           // Registration successful - auto-login the user
+          
+          // Save login state to SharedPreferences for persistence
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isLoggedIn', true);
+          await prefs.setBool('isAdmin', false);
+          await prefs.setInt('userId', data['id']);
+          await prefs.setString('username', username);
 
           // Navigate to main app
           Navigator.of(context).pushAndRemoveUntil(
