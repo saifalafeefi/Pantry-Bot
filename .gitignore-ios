@@ -1,0 +1,47 @@
+# iOS Distribution Branch - Build Artifacts
+
+# Include iOS build artifacts (opposite of normal Flutter .gitignore)
+# This branch is specifically for tracking iOS distribution files
+
+# iOS Build Outputs - INCLUDE THESE (override Flutter .gitignore)
+!ios-builds/
+!ios-builds/archives/
+!ios-builds/ipa-exports/
+!ios-builds/releases/
+
+# Include specific iOS build files
+!*.ipa
+!*.xcarchive/
+!*ExportOptions.plist
+!*DistributionSummary.plist
+!*manifest.plist
+
+# Include iOS project built products for distribution
+!pantrybot/ios/build/
+!pantrybot/build/ios/
+
+# Xcode build artifacts we want to keep for distribution
+!pantrybot/ios/Runner.xcworkspace/xcuserdata/
+!pantrybot/ios/DerivedData/
+
+# Still exclude sensitive/personal files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Exclude user-specific Xcode files
+pantrybot/ios/Runner.xcworkspace/xcuserdata/*/
+pantrybot/ios/Runner.xcodeproj/xcuserdata/*/
+
+# Exclude temporary files
+*.tmp
+*.bak
+
+# Keep development artifacts but exclude secrets
+!*.mobileprovision
+*.p12
+*.key
+
+# Version tracking
+ios-builds/version-history.md 
