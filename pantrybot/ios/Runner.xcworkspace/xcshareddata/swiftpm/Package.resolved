@@ -1,0 +1,15 @@
+{
+  "originHash" : "1d4909a34a8c9eebc423f1ebf4950cf106246c8f2f875c46e37827b99fb57896",
+  "pins" : [
+    {
+      "identity" : "updraft-sdk-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/appswithlove/updraft-sdk-ios",
+      "state" : {
+        "revision" : "f214c4229c71f127c591b8975f269503935c40ac",
+        "version" : "0.5.8"
+      }
+    }
+  ],
+  "version" : 3
+}

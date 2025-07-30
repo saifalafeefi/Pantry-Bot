@@ -31,8 +31,8 @@ target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
-  # Native Updraft SDK for automatic iOS updates
-  pod 'UpdraftSDK'
+  # UpdraftSDK removed - using Swift Package Manager instead
+  # pod 'UpdraftSDK'  # REMOVED due to iCloud corruption
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do

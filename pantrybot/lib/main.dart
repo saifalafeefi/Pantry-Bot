@@ -202,7 +202,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               Text('Version: 1.5.0', 
                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('Build: 10'),
+              Text('Build: 25'),
               SizedBox(height: 16),
               Text('Smart Kitchen Assistant'),
               SizedBox(height: 8),
@@ -255,12 +255,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             IconButton(
               icon: Icon(Icons.admin_panel_settings),
               onPressed: () {
-                                 Navigator.push(
-                   context,
-                   MaterialPageRoute(
-                     builder: (context) => AdminScreen(),
-                   ),
-                 );
+                                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AdminScreen(),
+                  ),
+                );
               },
             ),
           IconButton(
@@ -535,7 +535,6 @@ class _PantryListState extends State<PantryList> {
     final http = IOClient(ioc);
 
     try {
-      print('Fetching items for user: ${widget.userId}'); // Debug log
       final response = await http.get(
         Uri.parse('$baseUrl/grocery/items?user_id=${widget.userId}'),
         headers: {
@@ -544,9 +543,6 @@ class _PantryListState extends State<PantryList> {
           'Accept-Encoding': 'gzip',
         },
       ).timeout(const Duration(seconds: 30));
-
-      print('Fetch response status: ${response.statusCode}'); // Debug log
-      print('Fetch response body: ${response.body}'); // Debug log
 
       if (response.statusCode == 200) {
         final items = jsonDecode(response.body);
@@ -557,13 +553,11 @@ class _PantryListState extends State<PantryList> {
         _sortItems();
       }
     } catch (e) {
-      print('Error fetching items: $e');
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> addItem(String name, int quantity, String category, [String? metric, String? amountPerItem]) async {
-    print('Adding item: $name (qty: $quantity) for user: ${widget.userId}'); // Debug log
     
     final ioc = HttpClient()
       ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
@@ -578,7 +572,6 @@ class _PantryListState extends State<PantryList> {
         'metric': metric,
         'amount_per_item': amountPerItem,
       };
-      print('Sending request: $requestData'); // Debug log
 
       final response = await http.post(
         Uri.parse('$baseUrl/grocery/items'),
@@ -586,24 +579,15 @@ class _PantryListState extends State<PantryList> {
         body: jsonEncode(requestData),
       );
       
-      print('Response status: ${response.statusCode}'); // Debug log
-      print('Response body: ${response.body}'); // Debug log
-      
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success']) {
-          print('Successfully added item. Adding to list: ${data['item']}'); // Debug log
           setState(() {
             _items.insert(0, Map<String, dynamic>.from(data['item']));
           });
           _controller.clear();
           _sortItems();
-          print('Current items list: $_items'); // Debug log
-        } else {
-          print('Server returned success: false'); // Debug log
         }
-      } else {
-        print('Error adding item: ${response.body}');
       }
     } catch (e) {
       print('Error adding item: $e');
@@ -694,7 +678,6 @@ class _PantryListState extends State<PantryList> {
   }
 
   Future<void> deleteItem(int id) async {
-    HapticFeedback.heavyImpact();
     
     final ioClient = IOClient(client);
     await ioClient.delete(Uri.parse('$baseUrl/grocery/items/$id'));
