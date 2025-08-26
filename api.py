@@ -578,5 +578,69 @@ def get_apk():
     except FileNotFoundError:
         return jsonify({'error': 'APK file not found'}), 404
 
+@app.route('/api/apk/latest', methods=['GET'])
+def get_latest_apk():
+    """Get the latest APK from releases folder"""
+    releases_path = "/home/smiley/pantrybot/releases"
+    try:
+        # Debug: Check if folder exists
+        if not os.path.exists(releases_path):
+            return jsonify({'error': f'Releases folder does not exist: {releases_path}'}), 404
+        
+        # Debug: List all files in releases folder
+        all_files = os.listdir(releases_path)
+        print(f"DEBUG: All files in {releases_path}: {all_files}")
+        
+        # Get all APK files in releases folder
+        apk_files = [f for f in all_files if f.endswith('.apk')]
+        print(f"DEBUG: APK files found: {apk_files}")
+        
+        if not apk_files:
+            return jsonify({
+                'error': 'No APK files found', 
+                'folder': releases_path,
+                'all_files': all_files
+            }), 404
+        
+        # Sort by modification time, get latest
+        apk_files.sort(key=lambda x: os.path.getmtime(os.path.join(releases_path, x)), reverse=True)
+        latest_apk = apk_files[0]
+        
+        print(f"DEBUG: Serving latest APK: {latest_apk}")
+        
+        return send_file(
+            os.path.join(releases_path, latest_apk), 
+            as_attachment=True, 
+            download_name=latest_apk
+        )
+    except Exception as e:
+        print(f"DEBUG: Exception in get_latest_apk: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/apk/latest/info', methods=['GET'])
+def get_latest_apk_info():
+    """Get info about the latest APK"""
+    releases_path = "/home/smiley/pantrybot/releases"
+    try:
+        apk_files = [f for f in os.listdir(releases_path) if f.endswith('.apk')]
+        if not apk_files:
+            return jsonify({'error': 'No APK files found'}), 404
+        
+        apk_files.sort(key=lambda x: os.path.getmtime(os.path.join(releases_path, x)), reverse=True)
+        latest_apk = apk_files[0]
+        
+        # Extract version from filename
+        version_info = latest_apk.replace('pantrybot_v', '').replace('.apk', '')
+        file_path = os.path.join(releases_path, latest_apk)
+        
+        return jsonify({
+            'filename': latest_apk,
+            'version': version_info,
+            'upload_date': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+            'size': os.path.getsize(file_path)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 

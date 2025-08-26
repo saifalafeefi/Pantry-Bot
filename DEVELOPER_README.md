@@ -362,6 +362,51 @@ cp pantrybot.db backup/pantrybot_$(date +%Y%m%d).db
 
 ---
 
+## 🔄 OTA Update System
+
+### 📱 Platform-Specific Update Methods
+
+**IMPORTANT:** Android and iOS use completely different OTA update approaches:
+
+#### 🤖 Android OTA Updates (Pi Server Based)
+- **Method:** Custom Pi server implementation with SSL bypass
+- **Process:** 
+  1. User taps "Check for Updates" button in app
+  2. App downloads APK from `https://pantrybot.anonstorage.org:8443/api/apk/latest`
+  3. Uses Android method channels to trigger automatic installation
+  4. Native Android install prompt appears automatically
+- **Advantages:** Full control, instant updates, no third-party dependencies
+- **Requirements:** Pi server must be running and APK files in `~/pantrybot/releases/` folder
+
+#### 🍎 iOS OTA Updates (Updraft Distribution)
+- **Method:** Updraft SDK with automatic background checks
+- **Process:**
+  1. Updraft SDK checks for updates automatically in background
+  2. Users get push notifications when new builds are available
+  3. Updates install through Updraft's distribution system
+- **Advantages:** Automatic notifications, App Store-like experience
+- **Requirements:** Updraft API keys configured, builds uploaded to Updraft dashboard
+
+### 🔧 Implementation Details
+
+**Android Implementation:**
+```dart
+// Android uses Pi server with method channels
+const platform = MethodChannel('com.example.pantrybot/installer');
+await platform.invokeMethod('installApk', {'apkPath': apkFile.path});
+```
+
+**iOS Implementation:**
+```dart
+// iOS uses Updraft SDK (config/updraft_config.dart)
+// SDK handles everything automatically in background
+if (Platform.isIOS && UpdraftConfig.enableAutoUpdates) {
+  // Updraft SDK initialized in main()
+}
+```
+
+---
+
 ## 📱 Quick Commands Reference
 
 ### 🚀 Most Used Windows Commands
