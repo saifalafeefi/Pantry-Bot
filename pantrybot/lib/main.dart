@@ -306,7 +306,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   Future<void> _showAboutDialog() async {
-    // Package info simplified for iOS
+    // Get current app version dynamically
+    final packageInfo = await PackageInfo.fromPlatform();
+    final currentVersion = packageInfo.version;
+    final currentBuild = packageInfo.buildNumber;
     
     showDialog(
       context: context,
@@ -323,10 +326,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Version: 1.5.0', 
+              Text('Version: $currentVersion', 
                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('Build: 25'),
+              Text('Build: $currentBuild'),
               SizedBox(height: 16),
               Text('Smart Kitchen Assistant'),
               SizedBox(height: 8),
