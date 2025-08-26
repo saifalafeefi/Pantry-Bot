@@ -12,6 +12,7 @@ import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/recipes_screen.dart';
 // Removed updraft_config.dart - not needed for current implementation
 
 // API base URL
@@ -508,6 +509,46 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       SizedBox(width: 15),
                       Text(
                         'Pantry Items',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              SizedBox(height: 20),
+              
+              // Recipes Button
+              SizedBox(
+                width: double.infinity,
+                height: 80,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RecipesScreen(
+                          userId: widget.userId,
+                          isAdmin: widget.isAdmin,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepOrange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.restaurant_menu, size: 32),
+                      SizedBox(width: 15),
+                      Text(
+                        'Recipes',
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ],

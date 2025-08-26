@@ -125,38 +125,6 @@ PantryBot now supports automatic updates! No more manual APK distribution.
 ./deploy_update.sh 1.5.0
 ```
 
-## 🔧 Recent Updates & Fixes
-
-**Version 1.5.0 - Major Feature Release:**
-
-- **🌙 Dark Mode Support**: Complete dark theme implementation with persistent settings
-- **🔄 Native OTA Updates**: Revolutionary over-the-air update system with OnePlus/Samsung compatibility
-- **📱 Enhanced UI**: Improved settings screen with theme toggle and about dialog
-- **🛡️ Advanced Security**: Native Android method channel bypasses device security restrictions
-- **📊 Real-time Debug Logs**: Live update progress with comprehensive error reporting
-- **⚡ Instant Theme Switching**: Seamless light/dark mode transitions with SharedPreferences
-
-**OTA Update System Breakthrough:**
-
-- Native Android method channel implementation for maximum device compatibility
-- Bypasses OnePlus security restrictions that blocked standard installation methods
-- Real-time download progress with scrollable debug terminal
-- Multiple fallback installation methods for different Android versions
-- Copy logs functionality for easy troubleshooting
-- Works flawlessly on OnePlus 13, Samsung A70, and other restrictive devices
-
-**Previous Updates (v1.4.x):**
-
-- Fixed login flow to properly navigate to main menu instead of bypassing it
-- Added suggestion deletion feature - users can remove incorrect autocomplete suggestions
-- Improved navigation consistency between login, register, and main app flows
-- Enhanced user control over suggestion history with confirmation dialogs
-- Fixed password hashing iteration mismatch causing 500/401 login errors
-- Resolved database password hash corruption issues
-- Recreated admin panel with expandable user list interface
-- Added missing `frequency` and `user_id` columns to item_history table
-- Switched to local Pi IP addressing for faster response times
-
 ## 📱 User Manual
 
 ### 🔐 Login & User Management

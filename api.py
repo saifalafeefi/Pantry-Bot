@@ -127,6 +127,46 @@ def get_db():
     except sqlite3.OperationalError:
         pass
     
+    # Create recipes table
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS recipes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        image_path TEXT,
+        prep_time INTEGER,
+        cook_time INTEGER,
+        servings INTEGER,
+        date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    ''')
+    
+    # Create recipe_ingredients table
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS recipe_ingredients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipe_id INTEGER NOT NULL,
+        ingredient_name TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        unit TEXT NOT NULL,
+        notes TEXT,
+        FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+    )
+    ''')
+    
+    # Create recipe_steps table
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS recipe_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipe_id INTEGER NOT NULL,
+        step_number INTEGER NOT NULL,
+        instruction TEXT NOT NULL,
+        FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+    )
+    ''')
+    
     # Insert default admin user if not exists
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM users WHERE username = ?', ('admin',))
@@ -641,6 +681,257 @@ def get_latest_apk_info():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Recipe management endpoints
+@app.route('/recipes', methods=['GET'])
+def get_recipes():
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Missing user_id parameter'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, title, description, image_path, prep_time, cook_time, 
+                   servings, date_added
+            FROM recipes 
+            WHERE user_id = ? 
+            ORDER BY date_added DESC
+        ''', (user_id,))
+        
+        recipes = []
+        for row in cursor.fetchall():
+            recipes.append({
+                'id': row['id'],
+                'title': row['title'],
+                'description': row['description'],
+                'image_path': row['image_path'],
+                'prep_time': row['prep_time'],
+                'cook_time': row['cook_time'],
+                'servings': row['servings'],
+                'date_added': row['date_added']
+            })
+        
+        conn.close()
+        return jsonify(recipes)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/recipes', methods=['POST'])
+def create_recipe():
+    try:
+        data = request.json
+        required_fields = ['user_id', 'title']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Insert recipe
+        cursor.execute('''
+            INSERT INTO recipes (user_id, title, description, image_path, 
+                               prep_time, cook_time, servings) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data['user_id'],
+            data['title'],
+            data.get('description', ''),
+            data.get('image_path'),
+            data.get('prep_time', 0),
+            data.get('cook_time', 0),
+            data.get('servings', 1)
+        ))
+        
+        recipe_id = cursor.lastrowid
+        
+        # Insert ingredients
+        if 'ingredients' in data:
+            for ingredient in data['ingredients']:
+                cursor.execute('''
+                    INSERT INTO recipe_ingredients (recipe_id, ingredient_name, 
+                                                  quantity, unit, notes) 
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    recipe_id,
+                    ingredient['name'],
+                    ingredient['quantity'],
+                    ingredient['unit'],
+                    ingredient.get('notes', '')
+                ))
+        
+        # Insert steps
+        if 'steps' in data:
+            for i, step in enumerate(data['steps'], 1):
+                cursor.execute('''
+                    INSERT INTO recipe_steps (recipe_id, step_number, instruction) 
+                    VALUES (?, ?, ?)
+                ''', (recipe_id, i, step))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'recipe_id': recipe_id}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/recipes/<int:recipe_id>', methods=['GET'])
+def get_recipe_details(recipe_id):
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Missing user_id parameter'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get recipe
+        cursor.execute('''
+            SELECT id, title, description, image_path, prep_time, cook_time, 
+                   servings, date_added
+            FROM recipes 
+            WHERE id = ? AND user_id = ?
+        ''', (recipe_id, user_id))
+        
+        recipe_row = cursor.fetchone()
+        if not recipe_row:
+            return jsonify({'error': 'Recipe not found'}), 404
+        
+        recipe = {
+            'id': recipe_row['id'],
+            'title': recipe_row['title'],
+            'description': recipe_row['description'],
+            'image_path': recipe_row['image_path'],
+            'prep_time': recipe_row['prep_time'],
+            'cook_time': recipe_row['cook_time'],
+            'servings': recipe_row['servings'],
+            'date_added': recipe_row['date_added']
+        }
+        
+        # Get ingredients
+        cursor.execute('''
+            SELECT ingredient_name, quantity, unit, notes
+            FROM recipe_ingredients 
+            WHERE recipe_id = ?
+            ORDER BY id
+        ''', (recipe_id,))
+        
+        recipe['ingredients'] = []
+        for row in cursor.fetchall():
+            recipe['ingredients'].append({
+                'name': row['ingredient_name'],
+                'quantity': row['quantity'],
+                'unit': row['unit'],
+                'notes': row['notes']
+            })
+        
+        # Get steps
+        cursor.execute('''
+            SELECT step_number, instruction
+            FROM recipe_steps 
+            WHERE recipe_id = ?
+            ORDER BY step_number
+        ''', (recipe_id,))
+        
+        recipe['steps'] = []
+        for row in cursor.fetchall():
+            recipe['steps'].append({
+                'number': row['step_number'],
+                'instruction': row['instruction']
+            })
+        
+        conn.close()
+        return jsonify(recipe)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/recipes/<int:recipe_id>/ingredients/status', methods=['GET'])
+def get_recipe_ingredients_status(recipe_id):
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Missing user_id parameter'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get recipe ingredients
+        cursor.execute('''
+            SELECT ingredient_name, quantity, unit
+            FROM recipe_ingredients 
+            WHERE recipe_id = ?
+        ''', (recipe_id,))
+        
+        ingredients_status = []
+        for row in cursor.fetchall():
+            ingredient_name = row['ingredient_name']
+            required_quantity = row['quantity']
+            unit = row['unit']
+            
+            # Check pantry for this ingredient
+            cursor.execute('''
+                SELECT quantity, metric, amount_per_item
+                FROM items 
+                WHERE user_id = ? AND LOWER(name) LIKE LOWER(?)
+            ''', (user_id, f'%{ingredient_name}%'))
+            
+            pantry_item = cursor.fetchone()
+            
+            if pantry_item:
+                available_quantity = pantry_item['quantity']
+                # Simple availability check (could be improved with unit conversion)
+                if available_quantity >= required_quantity:
+                    status = 'available'
+                elif available_quantity > 0:
+                    status = 'low_stock'
+                else:
+                    status = 'unavailable'
+            else:
+                status = 'unavailable'
+            
+            ingredients_status.append({
+                'name': ingredient_name,
+                'required_quantity': required_quantity,
+                'unit': unit,
+                'status': status,
+                'available_quantity': pantry_item['quantity'] if pantry_item else 0
+            })
+        
+        conn.close()
+        return jsonify(ingredients_status)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/recipes/<int:recipe_id>', methods=['DELETE'])
+def delete_recipe(recipe_id):
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Missing user_id parameter'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Verify recipe ownership
+        cursor.execute('SELECT id FROM recipes WHERE id = ? AND user_id = ?', (recipe_id, user_id))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Recipe not found or access denied'}), 404
+        
+        # Delete recipe (ingredients and steps will be deleted due to CASCADE)
+        cursor.execute('DELETE FROM recipes WHERE id = ? AND user_id = ?', (recipe_id, user_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/test')
+def test():
+    return jsonify({'test': 'working'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000) 
