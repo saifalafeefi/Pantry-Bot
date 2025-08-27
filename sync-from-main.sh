@@ -26,9 +26,16 @@ fi
 echo "🌐 Fetching latest changes from origin..."
 git fetch origin
 
-# Merge changes from main, preserving iOS-specific files
-echo "🔀 Merging changes from main branch..."
-git merge origin/main --no-edit
+# Check if already up to date with main
+MAIN_HEAD=$(git rev-parse origin/main)
+if git merge-base --is-ancestor $MAIN_HEAD HEAD; then
+    echo "✅ Already up to date with main branch!"
+    exit 0
+fi
+
+# Squash merge changes from main branch
+echo "🔀 Squash merging changes from main branch..."
+git merge origin/main --squash
 
 # Restore iOS build artifacts if they were overwritten
 if [ -d "ios-builds-backup" ]; then
@@ -42,18 +49,14 @@ fi
 echo "📝 Staging iOS-specific changes..."
 git add ios-builds/ .gitignore-ios sync-from-main.sh 2>/dev/null || true
 
-# Commit if there are changes
-if ! git diff --cached --quiet 2>/dev/null; then
-    echo "💾 Committing iOS branch sync..."
-    git commit -m "Sync from main branch - $(date '+%Y-%m-%d %H:%M:%S')
+# Commit the squashed changes
+echo "💾 Committing squashed sync from main..."
+git commit -m "Squashed commit: Sync from main branch - $(date '+%Y-%m-%d %H:%M:%S')
 
-- Merged latest Flutter app changes from main
-- Preserved iOS build artifacts and configuration
+- Squash merged latest Flutter app changes from main
+- Preserved iOS build artifacts and configuration  
 - Maintained iOS distribution workflow"
-    echo "✅ Sync completed with commit"
-else
-    echo "✅ Sync completed - no changes to commit"
-fi
+echo "✅ Squashed sync completed"
 
 echo ""
 echo "🎉 iOS distribution branch successfully synced with main!"
