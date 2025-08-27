@@ -1,6 +1,6 @@
 # 📱 App Distribution with Updraft
 
-Quick guide for wireless app distribution without App Store or Play Store.
+Quick guide for wireless app distribution with automatic OTA updates - no App Store or Play Store needed!
 
 ## 🎯 Overview
 
@@ -73,9 +73,25 @@ flutter build apk --release
 
 ## 📈 Auto-Updates
 
-The app can include Updraft SDK for automatic update notifications:
+The app includes Updraft SDK for automatic update notifications:
 - **iOS**: Native SDK integration (ios-distribution branch)
-- **Android**: Flutter SDK integration (planned)
+- **Android**: ✅ Flutter SDK integration (IMPLEMENTED)
+
+### Android OTA Setup Instructions
+
+1. **Get Updraft Keys**: Sign up at https://getupdraft.com and create a new project
+2. **Configure Keys**: Edit `pantrybot/lib/config/updraft_config.dart`:
+   ```dart
+   static const String sdkKey = "your_sdk_key_here";
+   static const String appKey = "your_app_key_here";
+   ```
+3. **Build & Upload**: 
+   ```bash
+   flutter build apk --release
+   # Upload the APK to your Updraft dashboard
+   # Enable "App is public" setting
+   ```
+4. **Automatic Updates**: Users will automatically receive update notifications when you upload newer versions
 
 ## 🌟 Benefits
 

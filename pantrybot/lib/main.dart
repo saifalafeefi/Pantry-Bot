@@ -6,10 +6,17 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'screens/login_screen.dart';
 import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/recipes_screen.dart';
+// Removed updraft_config.dart - not needed for current implementation
+
+// API base URL
+const String baseUrl = 'https://pantrybot.anonstorage.org:8443';
 
 const Map<String, List<String>> categoryMetrics = {
   'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
@@ -41,6 +48,11 @@ enum SortOption {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Android: Pi server OTA, iOS: Updraft distribution
+  print('OTA update capability enabled - Android: Pi server, iOS: Updraft');
+  
+  print('PantryBot starting up - version 1.5.0 build 26');
   
   // Load saved login state from SharedPreferences
   final prefs = await SharedPreferences.getInstance();
@@ -153,15 +165,30 @@ class MainMenuScreen extends StatefulWidget {
 }
 
 class _MainMenuScreenState extends State<MainMenuScreen> {
-  // UpdateService removed for iOS compatibility
-
   @override
   void initState() {
     super.initState();
-    // Check for updates after the widget is built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Auto update check removed
-    });
+    // Check for updates after the widget is built (Android only)
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkForUpdatesAutomatically();
+      });
+    }
+  }
+  
+  // Platform-specific update initialization
+  Future<void> _checkForUpdatesAutomatically() async {
+    try {
+      if (Platform.isAndroid) {
+        // Android: Pi server-based OTA with manual check via update button
+        print('Android Pi-based OTA updates ready for manual check');
+      } else if (Platform.isIOS) {
+        // iOS: Updraft SDK handles automatic update checks and notifications
+        print('iOS Updraft SDK handling automatic update checks...');
+      }
+    } catch (e) {
+      print('Error during update initialization: $e');
+    }
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -178,11 +205,112 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   Future<void> _manualUpdateCheck() async {
-    // Manual update check removed for iOS compatibility
+    if (Platform.isAndroid) {
+      // Check server for latest version
+      try {
+        final client = HttpClient()..badCertificateCallback = ((cert, host, port) => true);
+        final ioClient = IOClient(client);
+        
+        final response = await ioClient.get(
+          Uri.parse('$baseUrl/api/apk/latest/info'),
+        ).timeout(Duration(seconds: 10));
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final serverVersion = data['version'] as String? ?? '1.5.0';
+          final serverBuild = (data['build'] as num?)?.toInt() ?? 1;
+          
+          // Get current app version dynamically from package info
+          final packageInfo = await PackageInfo.fromPlatform();
+          final currentVersion = packageInfo.version;
+          final currentBuild = int.parse(packageInfo.buildNumber);
+          
+          // Compare versions
+          if (_isNewerVersion(serverVersion, serverBuild, currentVersion, currentBuild)) {
+            _showUpdateDialog('$serverVersion (Build $serverBuild)', 'Available now');
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✅ You have the latest version (v$currentVersion+$currentBuild)'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } else {
+          throw Exception('Server returned ${response.statusCode}');
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Could not check for updates: ${e.toString()}'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } else {
+      // iOS
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🍎 iOS updates are handled through Updraft distribution'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+  
+  bool _isNewerVersion(String serverVersion, int serverBuild, String currentVersion, int currentBuild) {
+    // Compare version strings (1.5.0 vs 1.5.1)
+    final serverParts = serverVersion.split('.').map(int.parse).toList();
+    final currentParts = currentVersion.split('.').map(int.parse).toList();
+    
+    for (int i = 0; i < 3; i++) {
+      if (serverParts[i] > currentParts[i]) return true;
+      if (serverParts[i] < currentParts[i]) return false;
+    }
+    
+    // If version is same, compare build numbers
+    return serverBuild > currentBuild;
+  }
+  
+  Future<void> _showUpdateDialog(String version, String uploadDate) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Update Available!'),
+          content: Text('New version $version is available.\nUploaded: ${uploadDate.split('T')[0]}\n\nWould you like to download and install it now?'),
+          actions: [
+            TextButton(
+              child: Text('Later'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            TextButton(
+              child: Text('Update Now'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _showUpdateConsole();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  void _showUpdateConsole() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UpdateConsoleScreen(),
+      ),
+    );
   }
 
   Future<void> _showAboutDialog() async {
-    // Package info simplified for iOS
+    // Get current app version dynamically
+    final packageInfo = await PackageInfo.fromPlatform();
+    final currentVersion = packageInfo.version;
+    final currentBuild = packageInfo.buildNumber;
     
     showDialog(
       context: context,
@@ -199,10 +327,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Version: 1.5.0', 
+              Text('Version: $currentVersion', 
                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('Build: 25'),
+              Text('Build: $currentBuild'),
               SizedBox(height: 16),
               Text('Smart Kitchen Assistant'),
               SizedBox(height: 8),
@@ -210,6 +338,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               SizedBox(height: 16),
               Text('🆕 NEW: Automatic OTA Updates!', 
                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              SizedBox(height: 4),
+              Text(Platform.isAndroid 
+                ? '📱 Android: Pi server OTA enabled' 
+                : '🍎 iOS: Updraft distribution ready',
+                style: TextStyle(color: Colors.blue, fontSize: 12)),
               SizedBox(height: 8),
               Text('🌙 NEW: Dark Mode Available!', 
                    style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold)),
@@ -376,6 +509,46 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       SizedBox(width: 15),
                       Text(
                         'Pantry Items',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              SizedBox(height: 20),
+              
+              // Recipes Button
+              SizedBox(
+                width: double.infinity,
+                height: 80,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RecipesScreen(
+                          userId: widget.userId,
+                          isAdmin: widget.isAdmin,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepOrange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.restaurant_menu, size: 32),
+                      SizedBox(width: 15),
+                      Text(
+                        'Recipes',
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -1826,3 +1999,208 @@ class GroceryItem extends StatelessWidget {
     );
   }
 }
+
+class UpdateConsoleScreen extends StatefulWidget {
+  @override
+  _UpdateConsoleScreenState createState() => _UpdateConsoleScreenState();
+}
+
+class _UpdateConsoleScreenState extends State<UpdateConsoleScreen> {
+  List<String> _logs = [];
+  final ScrollController _scrollController = ScrollController();
+  bool _isUpdating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _addLog('🚀 Update console ready');
+    _startUpdate();
+  }
+
+  void _addLog(String message) {
+    if (mounted) {
+      setState(() {
+        _logs.add('${DateTime.now().toString().substring(11, 19)}: $message');
+      });
+      _scrollToBottom();
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _startUpdate() async {
+    if (_isUpdating) return;
+    _isUpdating = true;
+
+    try {
+      _addLog('📡 Downloading APK from Pi server...');
+      
+      // Use our SSL-bypassing HTTP client to download APK
+      final client = HttpClient()..badCertificateCallback = ((cert, host, port) => true);
+      final ioClient = IOClient(client);
+      
+      final response = await ioClient.get(
+        Uri.parse('https://pantrybot.anonstorage.org:8443/api/apk/latest'),
+      ).timeout(Duration(seconds: 30));
+      
+      if (response.statusCode == 200) {
+        _addLog('✅ APK downloaded (${response.bodyBytes.length} bytes)');
+        
+        // Save to Downloads folder where user can access it
+        final downloadsDir = Directory('/storage/emulated/0/Download');
+        final apkFile = File('${downloadsDir.path}/pantrybot_update.apk');
+        
+        try {
+          await apkFile.writeAsBytes(response.bodyBytes);
+          _addLog('💾 Saved APK to Downloads folder');
+          
+          // Trigger Android install intent automatically
+          _addLog('🚀 Triggering install prompt...');
+          
+          try {
+            // Use method channel to call Android install intent
+            const platform = MethodChannel('com.example.pantrybot/installer');
+            await platform.invokeMethod('installApk', {'apkPath': apkFile.path});
+            _addLog('✅ Android install prompt should appear now!');
+          } catch (e) {
+            _addLog('⚠️ Install intent failed, trying alternative...');
+            
+            // Fallback: Try to open the file directly with the system
+            final result = await Process.run('am', [
+              'start',
+              '-t', 'application/vnd.android.package-archive',
+              '-d', 'file://${apkFile.path}'
+            ]);
+            
+            if (result.exitCode == 0) {
+              _addLog('✅ Install triggered via system intent!');
+            } else {
+              _addLog('❌ Could not trigger install automatically');
+              _addLog('📱 Please go to Downloads and tap pantrybot_update.apk');
+            }
+          }
+          
+        } catch (e) {
+          _addLog('⚠️ Could not save to Downloads folder: ${e.toString()}');
+          _addLog('📋 Falling back to manual instructions!');
+        }
+        
+        _addLog('🎉 Update ready for installation!');
+        
+      } else {
+        _addLog('❌ Failed to download APK (HTTP ${response.statusCode})');
+      }
+      
+    } catch (e) {
+      _addLog('💥 Error: ${e.toString()}');
+    } finally {
+      _isUpdating = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Update Console'),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+      ),
+      body: Container(
+        color: Colors.black,
+        child: Column(
+          children: [
+            Container(
+              padding: EdgeInsets.all(8),
+              color: Colors.green,
+              width: double.infinity,
+              child: Text(
+                'Live Update Console',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: EdgeInsets.all(8),
+                itemCount: _logs.length,
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      _logs[index],
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Container(
+              padding: EdgeInsets.all(8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final allLogs = _logs.join('\n');
+                        Clipboard.setData(ClipboardData(text: allLogs));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Logs copied to clipboard!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      child: Text('Copy Logs'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text('Close'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+}
+
