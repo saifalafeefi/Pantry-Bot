@@ -904,6 +904,72 @@ def get_recipe_ingredients_status(recipe_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/recipes/<int:recipe_id>', methods=['PUT'])
+def update_recipe(recipe_id):
+    try:
+        data = request.json
+        required_fields = ['user_id', 'title']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Verify recipe ownership
+        cursor.execute('SELECT id FROM recipes WHERE id = ? AND user_id = ?', (recipe_id, data['user_id']))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Recipe not found or access denied'}), 404
+        
+        # Update recipe
+        cursor.execute('''
+            UPDATE recipes SET title = ?, description = ?, prep_time = ?, 
+                             cook_time = ?, servings = ?
+            WHERE id = ? AND user_id = ?
+        ''', (
+            data['title'],
+            data.get('description', ''),
+            data.get('prep_time', 0),
+            data.get('cook_time', 0),
+            data.get('servings', 1),
+            recipe_id,
+            data['user_id']
+        ))
+        
+        # Delete existing ingredients and steps
+        cursor.execute('DELETE FROM recipe_ingredients WHERE recipe_id = ?', (recipe_id,))
+        cursor.execute('DELETE FROM recipe_steps WHERE recipe_id = ?', (recipe_id,))
+        
+        # Insert updated ingredients
+        if 'ingredients' in data:
+            for ingredient in data['ingredients']:
+                cursor.execute('''
+                    INSERT INTO recipe_ingredients (recipe_id, ingredient_name, 
+                                                  quantity, unit, notes) 
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    recipe_id,
+                    ingredient['name'],
+                    ingredient['quantity'],
+                    ingredient['unit'],
+                    ingredient.get('notes', '')
+                ))
+        
+        # Insert updated steps
+        if 'steps' in data:
+            for i, step in enumerate(data['steps'], 1):
+                cursor.execute('''
+                    INSERT INTO recipe_steps (recipe_id, step_number, instruction) 
+                    VALUES (?, ?, ?)
+                ''', (recipe_id, i, step))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/recipes/<int:recipe_id>', methods=['DELETE'])
 def delete_recipe(recipe_id):
     try:
@@ -921,6 +987,81 @@ def delete_recipe(recipe_id):
         
         # Delete recipe (ingredients and steps will be deleted due to CASCADE)
         cursor.execute('DELETE FROM recipes WHERE id = ? AND user_id = ?', (recipe_id, user_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/ingredients/suggestions', methods=['GET'])
+def get_ingredient_suggestions():
+    try:
+        user_id = request.args.get('user_id')
+        query = request.args.get('query', '').lower()
+        
+        if not user_id:
+            return jsonify({'error': 'Missing user_id parameter'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        suggestions = []
+        
+        if query:
+            # Get suggestions from item_history (same as grocery suggestions)
+            cursor.execute('''
+                SELECT DISTINCT name, category, metric, amount_per_item, frequency 
+                FROM item_history 
+                WHERE user_id = ? AND LOWER(name) LIKE LOWER(?) 
+                ORDER BY frequency DESC, name ASC 
+                LIMIT 10
+            ''', (user_id, f'%{query}%'))
+            
+            for row in cursor.fetchall():
+                suggestions.append({
+                    'name': row['name'],
+                    'category': row['category'],
+                    'metric': row['metric'] or 'Piece',
+                    'amount_per_item': row['amount_per_item'] or '',
+                    'frequency': row['frequency']
+                })
+        
+        conn.close()
+        return jsonify(suggestions)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/ingredients/add-to-history', methods=['POST'])
+def add_ingredient_to_history():
+    try:
+        data = request.json
+        required_fields = ['user_id', 'name', 'category']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Add to item_history for future autocomplete
+        cursor.execute('''
+            INSERT OR REPLACE INTO item_history 
+            (name, category, user_id, metric, amount_per_item, frequency, last_used) 
+            VALUES (?, ?, ?, ?, ?, 
+                    COALESCE((SELECT frequency + 1 FROM item_history WHERE name = ? AND category = ? AND user_id = ?), 1),
+                    CURRENT_TIMESTAMP)
+        ''', (
+            data['name'],
+            data['category'],
+            data['user_id'],
+            data.get('metric', 'Piece'),
+            data.get('amount_per_item', ''),
+            data['name'],
+            data['category'], 
+            data['user_id']
+        ))
         
         conn.commit()
         conn.close()

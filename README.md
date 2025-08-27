@@ -1,6 +1,6 @@
 # 🤖 PantryBot - Smart Kitchen Assistant
 
-![Version](https://img.shields.io/badge/version-1.5.0-green.svg)
+![Version](https://img.shields.io/badge/version-1.5.1-green.svg)
 
 A comprehensive Raspberry Pi and Flutter-based system for managing pantry items, recipes, and grocery lists. Perfect for families who want to stay organized in the kitchen!
 
@@ -9,11 +9,11 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
 - **📱 Cross-Platform App**: Flutter mobile app for iOS/Android
 - **🖥️ Raspberry Pi Interface**: Touch-friendly desktop interface
 - **🛒 Smart Grocery Lists**: Multi-user grocery management with suggestions
-- **🍳 Recipe Management**: Store and organize your favorite recipes
+- **🍳 Smart Recipe Management**: Store recipes with pantry integration and ingredient autocomplete
 - **📊 Item Tracking**: Track pantry items with expiration dates
 - **👥 Multi-User Support**: Family accounts with individual preferences
 - **⚡ Quick Actions**: Swipe gestures and touch controls for lightning-fast interactions
-- **🔄 OTA Updates**: Automatic over-the-air app updates - no more manual APK distribution!
+- **🔄 OTA Updates**: Platform-specific automatic updates (Android: Pi server, iOS: Updraft)
 - **🌙 Dark Mode**: Toggle between light and dark themes with persistent settings
 
 ## 🛠️ Installation & Setup
@@ -97,33 +97,50 @@ A comprehensive Raspberry Pi and Flutter-based system for managing pantry items,
 
 ## 🔄 OTA (Over-The-Air) Updates
 
-PantryBot now supports automatic updates! No more manual APK distribution.
+PantryBot supports platform-specific automatic updates with no manual APK distribution needed!
 
-### For Users
-- App automatically checks for updates on startup
-- Get notified when new versions are available
-- One-tap update installation with real-time progress
-- Manual update check via update button in app bar
-- Live debug logs during update process
-- Copy logs feature for troubleshooting
-- Works on OnePlus, Samsung, and all Android devices
+### Platform-Specific Update Methods
 
-### For Developers
-- Deploy updates instantly with deployment scripts
-- Automatic version management
-- Server-side APK hosting
-- Rollback capabilities
+#### 🤖 Android Updates (Pi Server Based)
+- **Process**: Downloads APK from Pi server and installs automatically
+- **User Experience**: Tap "Check for Updates" → Download → Install prompt appears
+- **Advantages**: Full control, instant updates, no third-party dependencies
+- **Requirements**: Pi server running with APK files in releases folder
 
-**📖 Full OTA Documentation:** [README_OTA_UPDATES.md](./README_OTA_UPDATES.md)
+#### 🍎 iOS Updates (Updraft Distribution)  
+- **Process**: Updraft SDK handles automatic background update checks
+- **User Experience**: Push notifications when new builds are available
+- **Advantages**: Automatic notifications, App Store-like experience
+- **Requirements**: Builds uploaded to Updraft dashboard
 
-### Quick Deployment
-```powershell
-# Windows
-.\deploy_update.ps1 -Version "1.5.0"
+### For Developers - Version Management
 
-# Linux/Mac  
-./deploy_update.sh 1.5.0
+**Windows Development:**
+```cmd
+# Update version and clean project (recommended)
+.\bump_version_windows.bat 1.5.2 3
+
+# This automatically:
+# 1. Updates pubspec.yaml to version: 1.5.2+3
+# 2. Runs flutter clean 
+# 3. Runs flutter pub get
+# 4. Ready for manual build: flutter build apk --release
 ```
+
+**macOS Development (for iOS):**
+```bash
+# Update version for iOS development  
+./bump_version_macos.sh 1.5.2 3
+
+# Then build iOS in Xcode and upload to Updraft
+```
+
+### Quick Deployment Process
+1. **Update Version**: Use bump script to update version numbers
+2. **Build APK**: `flutter build apk --release` 
+3. **Deploy Android**: Copy APK to Pi server `~/pantrybot/releases/` folder with `.apk` extension
+4. **Deploy iOS**: Upload build to Updraft dashboard
+5. **Update API**: Update `APP_VERSION` in `api.py` to match new version
 
 ## 📱 User Manual
 

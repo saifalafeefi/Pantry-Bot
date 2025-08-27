@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 
 class AddRecipeScreen extends StatefulWidget {
   final int userId;
@@ -24,8 +25,8 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
   final _cookTimeController = TextEditingController();
   final _servingsController = TextEditingController();
 
-  // Dynamic lists
-  List<Map<String, TextEditingController>> ingredients = [];
+  // Dynamic lists with autocomplete support
+  List<IngredientWidget> ingredientWidgets = [];
   List<TextEditingController> steps = [];
 
   bool isLoading = false;
@@ -45,10 +46,8 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
     _cookTimeController.dispose();
     _servingsController.dispose();
     
-    for (var ingredient in ingredients) {
-      ingredient['name']?.dispose();
-      ingredient['quantity']?.dispose();
-      ingredient['unit']?.dispose();
+    for (var ingredient in ingredientWidgets) {
+      ingredient.dispose();
     }
     
     for (var step in steps) {
@@ -60,21 +59,25 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
 
   void _addIngredient() {
     setState(() {
-      ingredients.add({
-        'name': TextEditingController(),
-        'quantity': TextEditingController(),
-        'unit': TextEditingController(),
-      });
+      ingredientWidgets.add(IngredientWidget(
+        key: GlobalKey<_IngredientWidgetState>(),
+        userId: widget.userId,
+        onRemove: () => _removeIngredient(ingredientWidgets.length - 1),
+        canRemove: ingredientWidgets.length > 0,
+      ));
     });
   }
 
   void _removeIngredient(int index) {
-    if (ingredients.length > 1) {
+    if (ingredientWidgets.length > 1) {
       setState(() {
-        ingredients[index]['name']?.dispose();
-        ingredients[index]['quantity']?.dispose();
-        ingredients[index]['unit']?.dispose();
-        ingredients.removeAt(index);
+        ingredientWidgets[index].dispose();
+        ingredientWidgets.removeAt(index);
+        // Update remove callbacks
+        for (int i = 0; i < ingredientWidgets.length; i++) {
+          ingredientWidgets[i].updateRemoveCallback(() => _removeIngredient(i));
+          ingredientWidgets[i].updateCanRemove(ingredientWidgets.length > 1);
+        }
       });
     }
   }
@@ -104,6 +107,15 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
     });
 
     try {
+      // Collect ingredient data
+      List<Map<String, dynamic>> ingredientData = [];
+      for (var widget in ingredientWidgets) {
+        final data = widget.getIngredientData();
+        if (data != null && data['name'].isNotEmpty) {
+          ingredientData.add(data);
+        }
+      }
+
       // Prepare recipe data
       final recipeData = {
         'user_id': widget.userId,
@@ -112,14 +124,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
         'prep_time': int.tryParse(_prepTimeController.text) ?? 0,
         'cook_time': int.tryParse(_cookTimeController.text) ?? 0,
         'servings': int.tryParse(_servingsController.text) ?? 1,
-        'ingredients': ingredients
-            .where((ingredient) => ingredient['name']!.text.isNotEmpty)
-            .map((ingredient) => {
-                  'name': ingredient['name']!.text,
-                  'quantity': double.tryParse(ingredient['quantity']!.text) ?? 1.0,
-                  'unit': ingredient['unit']!.text,
-                })
-            .toList(),
+        'ingredients': ingredientData,
         'steps': steps
             .where((step) => step.text.isNotEmpty)
             .map((step) => step.text)
@@ -292,9 +297,9 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               ),
               SizedBox(height: 12),
 
-              ...ingredients.asMap().entries.map((entry) {
+              ...ingredientWidgets.asMap().entries.map((entry) {
                 final index = entry.key;
-                final ingredient = entry.value;
+                final widget = entry.value;
                 return Container(
                   margin: EdgeInsets.only(bottom: 12),
                   padding: EdgeInsets.all(12),
@@ -302,62 +307,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                     border: Border.all(color: Colors.grey[300]!),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextFormField(
-                              controller: ingredient['name'],
-                              decoration: InputDecoration(
-                                labelText: 'Ingredient',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                              validator: index == 0
-                                  ? (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Required';
-                                      }
-                                      return null;
-                                    }
-                                  : null,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            flex: 1,
-                            child: TextFormField(
-                              controller: ingredient['quantity'],
-                              decoration: InputDecoration(
-                                labelText: 'Qty',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                              keyboardType: TextInputType.number,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            flex: 1,
-                            child: TextFormField(
-                              controller: ingredient['unit'],
-                              decoration: InputDecoration(
-                                labelText: 'Unit',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: ingredients.length > 1 ? () => _removeIngredient(index) : null,
-                            icon: Icon(Icons.remove_circle, color: Colors.red),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                  child: widget,
                 );
               }).toList(),
 
@@ -478,6 +428,347 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class IngredientWidget extends StatefulWidget {
+  final int userId;
+  final VoidCallback onRemove;
+  final bool canRemove;
+
+  IngredientWidget({
+    Key? key,
+    required this.userId,
+    required this.onRemove,
+    required this.canRemove,
+  }) : super(key: key);
+
+  late VoidCallback _onRemove;
+  late bool _canRemove;
+
+  void updateRemoveCallback(VoidCallback callback) {
+    _onRemove = callback;
+  }
+
+  void updateCanRemove(bool canRemove) {
+    _canRemove = canRemove;
+  }
+
+  @override
+  _IngredientWidgetState createState() => _IngredientWidgetState();
+
+  void dispose() {
+    // Handled by the state class
+  }
+
+  Map<String, dynamic>? getIngredientData() {
+    final state = key as GlobalKey?;
+    return (state?.currentState as _IngredientWidgetState?)?.getIngredientData();
+  }
+}
+
+class _IngredientWidgetState extends State<IngredientWidget> {
+  final _nameController = TextEditingController();
+  final _quantityController = TextEditingController();
+  final _unitController = TextEditingController();
+  
+  List<Map<String, dynamic>> suggestions = [];
+  bool showSuggestions = false;
+  Timer? _debounceTimer;
+  final String baseUrl = 'https://pantrybot.anonstorage.org:8443';
+
+  @override
+  void initState() {
+    super.initState();
+    widget._onRemove = widget.onRemove;
+    widget._canRemove = widget.canRemove;
+    
+    _nameController.addListener(_onNameChanged);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _quantityController.dispose();
+    _unitController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onNameChanged() {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    
+    _debounceTimer = Timer(Duration(milliseconds: 300), () {
+      if (_nameController.text.length > 0) {
+        _getSuggestions(_nameController.text);
+      } else {
+        setState(() {
+          suggestions.clear();
+          showSuggestions = false;
+        });
+      }
+    });
+  }
+
+  Future<void> _getSuggestions(String query) async {
+    try {
+      final client = HttpClient()..badCertificateCallback = ((cert, host, port) => true);
+      final ioClient = IOClient(client);
+
+      final response = await ioClient.get(
+        Uri.parse('$baseUrl/ingredients/suggestions?user_id=${widget.userId}&query=${Uri.encodeQueryComponent(query)}'),
+      ).timeout(Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          suggestions = data.cast<Map<String, dynamic>>();
+          showSuggestions = suggestions.isNotEmpty;
+        });
+      }
+    } catch (e) {
+      print('Error getting suggestions: $e');
+    }
+  }
+
+  void _selectSuggestion(Map<String, dynamic> suggestion) {
+    setState(() {
+      _nameController.text = suggestion['name'];
+      _unitController.text = suggestion['metric'] ?? 'Piece';
+      showSuggestions = false;
+      suggestions.clear();
+    });
+  }
+
+  Future<void> _showNewIngredientDialog() async {
+    String? category;
+    String? metric;
+    String? amountPerItem;
+
+    final categories = [
+      'Vegetables', 'Fruits', 'Dairy', 'Meats', 'Grains', 'Sweets',
+      'Oils', 'Electronics', 'Drinks', 'Medicine', 'Cleaning', 'Other'
+    ];
+
+    final metrics = ['Piece', 'Gram', 'Kg', 'Litre', 'ml', 'Pack', 'Bottle', 'Can', 'Bunch', 'Bag'];
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('New Ingredient: ${_nameController.text}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('This ingredient is not in your grocery database yet. Please specify:'),
+                  SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: InputDecoration(
+                      labelText: 'Category *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: categories.map((cat) {
+                      return DropdownMenuItem(value: cat, child: Text(cat));
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        category = value;
+                      });
+                    },
+                  ),
+                  SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: metric,
+                    decoration: InputDecoration(
+                      labelText: 'Default Unit',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: metrics.map((unit) {
+                      return DropdownMenuItem(value: unit, child: Text(unit));
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        metric = value;
+                      });
+                    },
+                  ),
+                  SizedBox(height: 12),
+                  TextFormField(
+                    decoration: InputDecoration(
+                      labelText: 'Amount per item (optional)',
+                      hintText: 'e.g., 500g, 2L',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      amountPerItem = value;
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  child: Text('Cancel'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: Text('Add to Database'),
+                  onPressed: category != null ? () {
+                    Navigator.of(context).pop({
+                      'category': category!,
+                      'metric': metric ?? 'Piece',
+                      'amount_per_item': amountPerItem ?? '',
+                    });
+                  } : null,
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null) {
+      await _addIngredientToDatabase(result);
+    }
+  }
+
+  Future<void> _addIngredientToDatabase(Map<String, String> ingredientData) async {
+    try {
+      final client = HttpClient()..badCertificateCallback = ((cert, host, port) => true);
+      final ioClient = IOClient(client);
+
+      final response = await ioClient.post(
+        Uri.parse('$baseUrl/ingredients/add-to-history'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'user_id': widget.userId,
+          'name': _nameController.text,
+          'category': ingredientData['category'],
+          'metric': ingredientData['metric'],
+          'amount_per_item': ingredientData['amount_per_item'],
+        }),
+      ).timeout(Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _unitController.text = ingredientData['metric']!;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ ${_nameController.text} added to grocery database!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error adding ingredient to database: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Map<String, dynamic>? getIngredientData() {
+    if (_nameController.text.isEmpty) return null;
+    
+    return {
+      'name': _nameController.text,
+      'quantity': double.tryParse(_quantityController.text) ?? 1.0,
+      'unit': _unitController.text.isEmpty ? 'Piece' : _unitController.text,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Ingredient *',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      suffixIcon: _nameController.text.isNotEmpty && suggestions.isEmpty
+                          ? IconButton(
+                              icon: Icon(Icons.add, color: Colors.blue),
+                              onPressed: _showNewIngredientDialog,
+                              tooltip: 'Add to database',
+                            )
+                          : null,
+                    ),
+                    onChanged: (value) {
+                      // Trigger rebuild to show/hide add button
+                      setState(() {});
+                    },
+                  ),
+                  if (showSuggestions)
+                    Container(
+                      constraints: BoxConstraints(maxHeight: 150),
+                      child: Card(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: suggestions.length,
+                          itemBuilder: (context, index) {
+                            final suggestion = suggestions[index];
+                            return ListTile(
+                              dense: true,
+                              title: Text(suggestion['name']),
+                              subtitle: Text('${suggestion['category']} • ${suggestion['metric']}'),
+                              onTap: () => _selectSuggestion(suggestion),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              flex: 1,
+              child: TextFormField(
+                controller: _quantityController,
+                decoration: InputDecoration(
+                  labelText: 'Qty',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              flex: 1,
+              child: TextFormField(
+                controller: _unitController,
+                decoration: InputDecoration(
+                  labelText: 'Unit',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: widget._canRemove ? widget._onRemove : null,
+              icon: Icon(Icons.remove_circle, color: Colors.red),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

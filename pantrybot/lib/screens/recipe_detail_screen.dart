@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'edit_recipe_screen.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final int recipeId;
@@ -155,6 +156,26 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     return mins > 0 ? '${hours}h ${mins}min' : '${hours}h';
   }
 
+  String _formatIngredientText(Map<String, dynamic> ingredient) {
+    final name = ingredient['name'] ?? '';
+    final quantity = ingredient['quantity'];
+    final unit = ingredient['unit'] ?? '';
+    
+    // Only show quantity and unit if they have meaningful values
+    final hasQuantity = quantity != null && quantity > 0 && quantity != 1.0;
+    final hasUnit = unit.isNotEmpty && unit.toLowerCase() != 'piece';
+    
+    if (hasQuantity && hasUnit) {
+      return '$quantity $unit $name';
+    } else if (hasQuantity) {
+      return '$quantity $name';
+    } else if (hasUnit) {
+      return '$unit $name';
+    } else {
+      return name;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -163,6 +184,25 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         backgroundColor: Colors.orange,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: Icon(Icons.edit),
+            onPressed: () async {
+              if (recipe != null) {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditRecipeScreen(
+                      userId: widget.userId,
+                      recipe: recipe!,
+                    ),
+                  ),
+                );
+                if (result == true) {
+                  _loadRecipeDetails(); // Refresh recipe details
+                }
+              }
+            },
+          ),
           IconButton(
             icon: Icon(Icons.delete),
             onPressed: _confirmDeleteRecipe,
@@ -301,7 +341,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                                 SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    '${ingredient['quantity']} ${ingredient['unit']} ${ingredient['name']}',
+                                    _formatIngredientText(ingredient),
                                     style: TextStyle(fontSize: 16),
                                   ),
                                 ),
