@@ -415,13 +415,12 @@ def get_suggestions():
     conn = get_db()
     if is_admin:
         suggestions = conn.execute('''
-            SELECT DISTINCT name, category, MAX(COALESCE(frequency,0)) as use_count, metric, amount_per_item 
+            SELECT name, category, COALESCE(frequency,0) as use_count, metric, amount_per_item, last_used
             FROM item_history 
-            WHERE LOWER(name) LIKE ? 
-            GROUP BY name, category, metric, amount_per_item
+            WHERE LOWER(name) LIKE ? AND user_id = ?
             ORDER BY use_count DESC, last_used DESC 
             LIMIT 1000
-        ''', (f'%{query}%',)).fetchall()
+        ''', (f'%{query}%', user_id)).fetchall()
     else:
         suggestions = conn.execute('''
             SELECT name, category, COALESCE(frequency,0) as use_count, metric, amount_per_item
