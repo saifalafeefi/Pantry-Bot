@@ -14,10 +14,118 @@ import 'screens/admin_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/recipes_screen.dart';
 import 'screens/urgency_screen.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 // Removed updraft_config.dart - not needed for current implementation
 
 // API base URL
 const String baseUrl = 'https://pantrybot.anonstorage.org:8443';
+
+// Global notification plugin instance
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
+    FlutterLocalNotificationsPlugin();
+
+class NotificationService {
+  static Future<void> initialize() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    
+    const DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+    
+    const InitializationSettings initializationSettings =
+        InitializationSettings(
+          android: initializationSettingsAndroid,
+          iOS: initializationSettingsIOS,
+        );
+    
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+    
+    // Request Android 13+ notification permission
+    if (Platform.isAndroid) {
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+    }
+  }
+  
+  static Future<bool> areNotificationsEnabled() async {
+    if (Platform.isAndroid) {
+      final androidPlugin = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      return await androidPlugin?.areNotificationsEnabled() ?? false;
+    }
+    return true; // iOS handles this differently
+  }
+  
+  static Future<void> showTestNotification() async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+          'pantrybot_test',
+          'PantryBot Test',
+          channelDescription: 'Test notifications from PantryBot',
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        );
+    
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        );
+    
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+    
+    await flutterLocalNotificationsPlugin.show(
+      0,
+      '🤖 PantryBot Test',
+      'Notifications are working! You\'ll get alerts for important grocery items.',
+      platformChannelSpecifics,
+    );
+  }
+  
+  static Future<void> showGroceryReminder(String itemName, String urgencyLevel) async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+          'pantrybot_grocery',
+          'Grocery Reminders',
+          channelDescription: 'Reminders for important grocery items',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        );
+    
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        );
+    
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+    
+    await flutterLocalNotificationsPlugin.show(
+      DateTime.now().millisecondsSinceEpoch % 100000, // Unique ID
+      '🛒 Grocery Reminder',
+      '$itemName ($urgencyLevel priority) - Don\'t forget to buy this!',
+      platformChannelSpecifics,
+    );
+  }
+}
 
 const Map<String, List<String>> categoryMetrics = {
   'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
@@ -50,10 +158,13 @@ enum SortOption {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Initialize notifications
+  await NotificationService.initialize();
+  
   // Android: Pi server OTA, iOS: Updraft distribution
   print('OTA update capability enabled - Android: Pi server, iOS: Updraft');
   
-  print('PantryBot starting up - version 1.5.0 build 26');
+  print('PantryBot starting up - version 1.6.2 build 28');
   
   // Load saved login state from SharedPreferences
   final prefs = await SharedPreferences.getInstance();
@@ -169,12 +280,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   @override
   void initState() {
     super.initState();
-    // Check for updates after the widget is built (Android only)
-    if (Platform.isAndroid) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Check for updates and notifications after the widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (Platform.isAndroid) {
         _checkForUpdatesAutomatically();
-      });
-    }
+      }
+      _checkNotificationPermission();
+    });
   }
   
   // Platform-specific update initialization
@@ -307,6 +419,136 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     );
   }
 
+  Future<void> _checkNotificationPermission() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Check if user has already made a decision
+      final notificationsEnabled = prefs.getBool('notifications_enabled');
+      final dontShowAgain = prefs.getBool('notifications_dont_show_again') ?? false;
+      
+      // If user already pressed Enable or Don't Show Again, never show popup
+      if (dontShowAgain || notificationsEnabled == true) {
+        return;
+      }
+      
+      // Show popup only if user hasn't seen it before or chose "remind me later"
+      _showNotificationPermissionDialog();
+      
+    } catch (e) {
+      print('Error checking notification permission: $e');
+    }
+  }
+
+  Future<void> _showNotificationPermissionDialog() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.notifications, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Enable Notifications'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Get notified about your grocery list items and pantry updates!'),
+              SizedBox(height: 16),
+              Text('• Frequent item reminders', style: TextStyle(fontSize: 14)),
+              Text('• Priority item alerts', style: TextStyle(fontSize: 14)),
+              Text('• Pantry expiration warnings', style: TextStyle(fontSize: 14)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: Text('Remind Me Later'),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                // Don't save any preference - will show again next time
+              },
+            ),
+            TextButton(
+              child: Text('Don\'t Show Again'),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('notifications_dont_show_again', true);
+                await prefs.setBool('notifications_enabled', false);
+              },
+            ),
+            ElevatedButton(
+              child: Text('Enable'),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _requestNotificationPermission();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // For Android, always mark as handled when user presses Enable
+      // The openAppSettings() will redirect to system settings
+      await prefs.setBool('notifications_enabled', true);
+      await prefs.setBool('notifications_dont_show_again', true);
+      
+      // Always redirect to app settings for notification permission
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Opening settings to enable notifications...'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+      
+      // Open app settings directly
+      await openAppSettings();
+      
+    } catch (e) {
+      print('Error requesting notification permission: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to open settings'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showSettingsRedirectDialog() async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Open Settings'),
+          content: Text('To enable notifications, please go to your device Settings > Apps > PantryBot > Permissions > Notifications.'),
+          actions: [
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              child: Text('Open Settings'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                openAppSettings();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _showAboutDialog() async {
     // Get current app version dynamically
     final packageInfo = await PackageInfo.fromPlatform();
@@ -337,16 +579,8 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               SizedBox(height: 8),
               Text('Manage your pantry, grocery lists, and recipes with ease!'),
               SizedBox(height: 16),
-              Text('🆕 NEW: Automatic OTA Updates!', 
-                   style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-              SizedBox(height: 4),
-              Text(Platform.isAndroid 
-                ? '📱 Android: Pi server OTA enabled' 
-                : '🍎 iOS: Updraft distribution ready',
-                style: TextStyle(color: Colors.blue, fontSize: 12)),
-              SizedBox(height: 8),
-              Text('🌙 NEW: Dark Mode Available!', 
-                   style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold)),
+              Text('App developed by Saif Alafeefi.',
+                   style: TextStyle(color: Colors.grey[600], fontSize: 14)),
             ],
           ),
           actions: [
@@ -1669,26 +1903,94 @@ class _PantryListState extends State<PantryList> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Get notified when your pantry items are about to expire!'),
+                  Text('Get notified about important grocery items and reminders!'),
                   SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () async {
-                      print('Test notification - iOS compatible mode');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Test notification sent!')),
+                  FutureBuilder<bool>(
+                    future: NotificationService.areNotificationsEnabled(),
+                    builder: (context, snapshot) {
+                      final isEnabled = snapshot.data ?? false;
+                      return Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isEnabled ? Icons.check_circle : Icons.error,
+                                color: isEnabled ? Colors.green : Colors.red,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                isEnabled ? 'Notifications Enabled' : 'Notifications Disabled',
+                                style: TextStyle(
+                                  color: isEnabled ? Colors.green : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 16),
+                        ],
                       );
                     },
-                    child: Text('Test Notifications'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        await NotificationService.showTestNotification();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ Test notification sent!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('❌ Failed to send notification: Enable notifications in Settings first'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text('Send Test Notification'),
                   ),
                   SizedBox(height: 10),
                   ElevatedButton(
                     onPressed: () async {
-                      print('Check expiring items - iOS compatible mode');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Checked for expiring pantry items!')),
-                      );
+                      // Send sample grocery reminder
+                      try {
+                        await NotificationService.showGroceryReminder('Milk', 'High');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ Sample grocery reminder sent!'),
+                            backgroundColor: Colors.blue,
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('❌ Failed to send reminder: Enable notifications in Settings first'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     },
-                    child: Text('Check Expiring Items'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text('Test Grocery Reminder'),
+                  ),
+                  SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      openAppSettings();
+                    },
+                    child: Text('Open System Settings'),
                   ),
                 ],
               ),
