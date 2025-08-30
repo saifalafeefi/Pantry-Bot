@@ -1,10 +1,11 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import secrets
 import os
+import math
 
 app = Flask(__name__)
 CORS(app)
@@ -126,6 +127,51 @@ def get_db():
         conn.execute('ALTER TABLE item_history ADD COLUMN amount_per_item TEXT DEFAULT NULL')
     except sqlite3.OperationalError:
         pass
+    
+    # Add urgency tracking columns to item_history
+    try:
+        conn.execute('ALTER TABLE item_history ADD COLUMN days_since_last_use INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE item_history ADD COLUMN average_interval REAL DEFAULT 7.0')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE item_history ADD COLUMN predicted_next_use DATE')
+    except sqlite3.OperationalError:
+        pass
+    
+    # Create item_urgency table for frequency tracking and urgency management
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS item_urgency (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        item_name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        urgency_level INTEGER DEFAULT 3,
+        is_manual_override BOOLEAN DEFAULT 0,
+        auto_calculated_urgency INTEGER DEFAULT 3,
+        last_purchased_days_ago INTEGER DEFAULT 0,
+        average_purchase_interval REAL DEFAULT 7.0,
+        notification_enabled BOOLEAN DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, item_name, category)
+    )
+    ''')
+    
+    # Create notification_log table
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS notification_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        item_name TEXT NOT NULL,
+        urgency_level INTEGER NOT NULL,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        notification_type TEXT DEFAULT 'reminder'
+    )
+    ''')
     
     # Create recipes table
     conn.execute('''
@@ -298,10 +344,46 @@ def get_items():
         return jsonify({'error': 'user_id is required'}), 400
         
     conn = get_db()
-    items = conn.execute(
-        'SELECT * FROM grocery_items WHERE user_id = ? ORDER BY created_at DESC', 
-        (user_id,)
-    ).fetchall()
+    # Enhanced query to include urgency data from item_history and item_urgency
+    items = conn.execute('''
+        SELECT 
+            g.*,
+            h.frequency,
+            h.last_used,
+            h.days_since_last_use,
+            h.average_interval,
+            COALESCE(u.urgency_level, 
+                CASE 
+                    WHEN h.frequency IS NULL THEN 3
+                    ELSE CASE 
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 2.0 THEN 5
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 1.5 THEN 4
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 1.0 THEN 3
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 0.7 THEN 2
+                        ELSE 1
+                    END
+                END
+            ) as urgency_level,
+            u.is_manual_override,
+            u.notification_enabled
+        FROM grocery_items g
+        LEFT JOIN item_history h ON g.user_id = h.user_id AND g.name = h.name AND g.category = h.category
+        LEFT JOIN item_urgency u ON g.user_id = u.user_id AND g.name = u.item_name AND g.category = u.category
+        WHERE g.user_id = ? 
+        ORDER BY 
+            COALESCE(u.urgency_level, 
+                CASE 
+                    WHEN h.frequency IS NULL THEN 3
+                    ELSE CASE 
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 2.0 THEN 5
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 1.5 THEN 4
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 1.0 THEN 3
+                        WHEN (julianday('now') - julianday(h.last_used)) / h.average_interval >= 0.7 THEN 2
+                        ELSE 1
+                    END
+                END
+            ) DESC, g.created_at DESC
+    ''', (user_id,)).fetchall()
     conn.close()
     return jsonify([dict(item) for item in items])
 
@@ -352,6 +434,35 @@ def add_item():
         ''', (name, quantity, category, user_id, metric, amount_per_item))
         
         new_id = cursor.lastrowid
+        
+        # Calculate and update urgency for this item
+        cursor.execute('''
+            SELECT frequency, last_used, average_interval
+            FROM item_history
+            WHERE user_id = ? AND name = ? AND category = ?
+        ''', (user_id, name, category))
+        
+        history = cursor.fetchone()
+        if history:
+            days_since = 0  # Just added, so 0 days since last use
+            auto_urgency = calculate_urgency_score(
+                history['frequency'] or 0,
+                days_since,
+                history['average_interval'] or 7.0
+            )
+            
+            # Update or insert urgency record (only if not manually overridden)
+            cursor.execute('''
+                INSERT OR REPLACE INTO item_urgency 
+                (user_id, item_name, category, urgency_level, is_manual_override, 
+                 auto_calculated_urgency, last_purchased_days_ago, updated_at)
+                SELECT ?, ?, ?, 
+                       CASE WHEN u.is_manual_override = 1 THEN u.urgency_level ELSE ? END,
+                       COALESCE(u.is_manual_override, 0),
+                       ?, 0, CURRENT_TIMESTAMP
+                FROM (SELECT 1) dummy
+                LEFT JOIN item_urgency u ON u.user_id = ? AND u.item_name = ? AND u.category = ?
+            ''', (user_id, name, category, auto_urgency, auto_urgency, user_id, name, category))
         
         # Verify the item was added
         cursor.execute('SELECT * FROM grocery_items WHERE id = ?', (new_id,))
@@ -1066,6 +1177,303 @@ def add_ingredient_to_history():
         conn.close()
         
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ===== URGENCY TRACKING & FREQUENCY ANALYSIS ENDPOINTS =====
+
+def calculate_urgency_score(frequency, days_since_last, average_interval, user_override=None):
+    """Calculate urgency score from 1-5 based on frequency patterns"""
+    if user_override:
+        return user_override
+    
+    # Base urgency calculation
+    if frequency == 0:
+        return 2  # Medium - no history
+    
+    # Calculate expected vs actual time since last purchase
+    overdue_ratio = days_since_last / max(average_interval, 1.0)
+    
+    if overdue_ratio >= 2.0:
+        return 5  # Emergency - way overdue
+    elif overdue_ratio >= 1.5:
+        return 4  # Critical - overdue
+    elif overdue_ratio >= 1.0:
+        return 3  # High - due
+    elif overdue_ratio >= 0.7:
+        return 2  # Medium - approaching
+    else:
+        return 1  # Low - still fresh
+
+@app.route('/urgency/items', methods=['GET'])
+def get_urgency_items():
+    """Get all items with urgency levels for a user"""
+    user_id = request.args.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    try:
+        conn = get_db()
+        
+        # Get items from grocery history with urgency data
+        items = conn.execute('''
+            SELECT 
+                h.name,
+                h.category,
+                h.frequency,
+                h.last_used,
+                h.days_since_last_use,
+                h.average_interval,
+                u.urgency_level,
+                u.is_manual_override,
+                u.auto_calculated_urgency,
+                u.last_purchased_days_ago,
+                u.notification_enabled,
+                u.updated_at as urgency_updated
+            FROM item_history h
+            LEFT JOIN item_urgency u ON h.user_id = u.user_id AND h.name = u.item_name AND h.category = u.category
+            WHERE h.user_id = ?
+            ORDER BY COALESCE(u.urgency_level, 3) DESC, h.frequency DESC
+        ''', (user_id,)).fetchall()
+        
+        result = []
+        for item in items:
+            # Calculate current urgency if not manually set
+            days_since = (datetime.now() - datetime.fromisoformat(item['last_used'].replace('Z', '+00:00'))).days if item['last_used'] else 999
+            auto_urgency = calculate_urgency_score(
+                item['frequency'] or 0,
+                days_since,
+                item['average_interval'] or 7.0
+            )
+            
+            result.append({
+                'name': item['name'],
+                'category': item['category'],
+                'frequency': item['frequency'] or 0,
+                'days_since_last': days_since,
+                'average_interval': item['average_interval'] or 7.0,
+                'urgency_level': item['urgency_level'] or auto_urgency,
+                'auto_calculated_urgency': auto_urgency,
+                'is_manual_override': bool(item['is_manual_override']),
+                'notification_enabled': bool(item['notification_enabled']) if item['notification_enabled'] is not None else True,
+                'last_used': item['last_used'],
+                'urgency_updated': item['urgency_updated']
+            })
+        
+        conn.close()
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/urgency/items/<item_name>/<category>/<int:user_id>', methods=['PUT'])
+def update_urgency_manual(item_name, category, user_id):
+    """Manually update urgency level for an item"""
+    try:
+        data = request.json
+        urgency_level = data.get('urgency_level', 3)
+        notification_enabled = data.get('notification_enabled', True)
+        
+        if not (1 <= urgency_level <= 5):
+            return jsonify({'error': 'urgency_level must be between 1 and 5'}), 400
+        
+        conn = get_db()
+        
+        # Calculate auto urgency for comparison
+        item_history = conn.execute('''
+            SELECT frequency, last_used, average_interval
+            FROM item_history 
+            WHERE user_id = ? AND name = ? AND category = ?
+        ''', (user_id, item_name, category)).fetchone()
+        
+        auto_urgency = 3  # default
+        if item_history:
+            days_since = (datetime.now() - datetime.fromisoformat(item_history['last_used'].replace('Z', '+00:00'))).days if item_history['last_used'] else 999
+            auto_urgency = calculate_urgency_score(
+                item_history['frequency'] or 0,
+                days_since,
+                item_history['average_interval'] or 7.0
+            )
+        
+        # Insert or update urgency record
+        conn.execute('''
+            INSERT OR REPLACE INTO item_urgency 
+            (user_id, item_name, category, urgency_level, is_manual_override, 
+             auto_calculated_urgency, notification_enabled, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, item_name, category, urgency_level, auto_urgency, notification_enabled))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'urgency_level': urgency_level,
+            'auto_calculated_urgency': auto_urgency,
+            'is_manual_override': True
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/urgency/calculate/<int:user_id>', methods=['POST'])
+def recalculate_urgencies(user_id):
+    """Recalculate all auto urgencies for a user"""
+    try:
+        conn = get_db()
+        
+        # Get all items from history
+        items = conn.execute('''
+            SELECT name, category, frequency, last_used, average_interval
+            FROM item_history 
+            WHERE user_id = ?
+        ''', (user_id,)).fetchall()
+        
+        updated_count = 0
+        for item in items:
+            days_since = (datetime.now() - datetime.fromisoformat(item['last_used'].replace('Z', '+00:00'))).days if item['last_used'] else 999
+            auto_urgency = calculate_urgency_score(
+                item['frequency'] or 0,
+                days_since,
+                item['average_interval'] or 7.0
+            )
+            
+            # Update days since last use in history
+            conn.execute('''
+                UPDATE item_history 
+                SET days_since_last_use = ?
+                WHERE user_id = ? AND name = ? AND category = ?
+            ''', (days_since, user_id, item['name'], item['category']))
+            
+            # Update or insert urgency (only if not manually overridden)
+            conn.execute('''
+                INSERT OR REPLACE INTO item_urgency 
+                (user_id, item_name, category, urgency_level, is_manual_override, 
+                 auto_calculated_urgency, last_purchased_days_ago, updated_at)
+                SELECT ?, ?, ?, 
+                       CASE WHEN u.is_manual_override = 1 THEN u.urgency_level ELSE ? END,
+                       COALESCE(u.is_manual_override, 0),
+                       ?, ?, CURRENT_TIMESTAMP
+                FROM (SELECT 1) dummy
+                LEFT JOIN item_urgency u ON u.user_id = ? AND u.item_name = ? AND u.category = ?
+            ''', (user_id, item['name'], item['category'], auto_urgency, auto_urgency, days_since, user_id, item['name'], item['category']))
+            
+            updated_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'updated_items': updated_count,
+            'message': f'Recalculated urgency for {updated_count} items'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/urgency/analytics/<int:user_id>', methods=['GET'])
+def get_urgency_analytics(user_id):
+    """Get frequency analytics and trends for a user"""
+    try:
+        conn = get_db()
+        
+        # Get urgency distribution
+        urgency_distribution = conn.execute('''
+            SELECT 
+                COALESCE(u.urgency_level, 3) as urgency,
+                COUNT(*) as count
+            FROM item_history h
+            LEFT JOIN item_urgency u ON h.user_id = u.user_id AND h.name = u.item_name AND h.category = u.category
+            WHERE h.user_id = ?
+            GROUP BY COALESCE(u.urgency_level, 3)
+            ORDER BY urgency
+        ''', (user_id,)).fetchall()
+        
+        # Get top frequent items
+        top_frequent = conn.execute('''
+            SELECT name, category, frequency, average_interval, last_used
+            FROM item_history 
+            WHERE user_id = ?
+            ORDER BY frequency DESC
+            LIMIT 10
+        ''', (user_id,)).fetchall()
+        
+        # Get overdue items
+        overdue_items = conn.execute('''
+            SELECT h.name, h.category, h.frequency, h.days_since_last_use, h.average_interval,
+                   COALESCE(u.urgency_level, 3) as urgency_level
+            FROM item_history h
+            LEFT JOIN item_urgency u ON h.user_id = u.user_id AND h.name = u.item_name AND h.category = u.category
+            WHERE h.user_id = ? AND h.days_since_last_use > h.average_interval
+            ORDER BY (h.days_since_last_use / h.average_interval) DESC
+            LIMIT 20
+        ''', (user_id,)).fetchall()
+        
+        # Get category breakdown
+        category_stats = conn.execute('''
+            SELECT category, 
+                   COUNT(*) as item_count,
+                   AVG(frequency) as avg_frequency,
+                   AVG(average_interval) as avg_interval
+            FROM item_history
+            WHERE user_id = ?
+            GROUP BY category
+            ORDER BY avg_frequency DESC
+        ''', (user_id,)).fetchall()
+        
+        conn.close()
+        
+        return jsonify({
+            'urgency_distribution': [dict(row) for row in urgency_distribution],
+            'top_frequent_items': [dict(row) for row in top_frequent],
+            'overdue_items': [dict(row) for row in overdue_items],
+            'category_stats': [dict(row) for row in category_stats],
+            'total_tracked_items': sum(row['count'] for row in urgency_distribution)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/notifications/pending/<int:user_id>', methods=['GET'])
+def get_pending_notifications(user_id):
+    """Get items that need notifications"""
+    try:
+        conn = get_db()
+        
+        # Get high urgency items that haven't been notified recently
+        pending = conn.execute('''
+            SELECT h.name, h.category, h.frequency, h.days_since_last_use, h.average_interval,
+                   COALESCE(u.urgency_level, 3) as urgency_level,
+                   u.notification_enabled,
+                   MAX(n.sent_at) as last_notification
+            FROM item_history h
+            LEFT JOIN item_urgency u ON h.user_id = u.user_id AND h.name = u.item_name AND h.category = u.category
+            LEFT JOIN notification_log n ON h.user_id = n.user_id AND h.name = n.item_name
+            WHERE h.user_id = ? 
+            AND COALESCE(u.urgency_level, 3) >= 3
+            AND COALESCE(u.notification_enabled, 1) = 1
+            AND (n.sent_at IS NULL OR datetime(n.sent_at, '+24 hours') < datetime('now'))
+            GROUP BY h.name, h.category
+            ORDER BY COALESCE(u.urgency_level, 3) DESC, h.frequency DESC
+        ''', (user_id,)).fetchall()
+        
+        result = []
+        for item in pending:
+            overdue_days = max(0, item['days_since_last_use'] - item['average_interval'])
+            result.append({
+                'name': item['name'],
+                'category': item['category'],
+                'urgency_level': item['urgency_level'],
+                'frequency': item['frequency'],
+                'days_overdue': overdue_days,
+                'average_interval': item['average_interval'],
+                'last_notification': item['last_notification']
+            })
+        
+        conn.close()
+        return jsonify(result)
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

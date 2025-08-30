@@ -13,6 +13,7 @@ import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/recipes_screen.dart';
+import 'screens/urgency_screen.dart';
 // Removed updraft_config.dart - not needed for current implementation
 
 // API base URL
@@ -549,6 +550,47 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       SizedBox(width: 15),
                       Text(
                         'Recipes',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              SizedBox(height: 20),
+              
+              // Priority Manager Button
+              SizedBox(
+                width: double.infinity,
+                height: 80,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => UrgencyScreen(
+                          userId: widget.userId,
+                          username: widget.username,
+                          isAdmin: widget.isAdmin,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.priority_high, size: 32),
+                      SizedBox(width: 15),
+                      Text(
+                        'Priority Manager',
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -1377,6 +1419,154 @@ class _PantryListState extends State<PantryList> {
     );
   }
 
+  void _showUrgencyDialog(Map<String, dynamic> item) {
+    int currentUrgency = item['urgency_level'] as int? ?? 3;
+    bool notificationEnabled = item['notification_enabled'] != 0;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Adjust Priority: ${item['name']}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Current Priority: Level $currentUrgency'),
+                  SizedBox(height: 20),
+                  Text('Priority Level'),
+                  Slider(
+                    value: currentUrgency.toDouble(),
+                    min: 1,
+                    max: 5,
+                    divisions: 4,
+                    label: switch(currentUrgency) {
+                      1 => 'Low',
+                      2 => 'Medium',
+                      3 => 'High',
+                      4 => 'Critical',
+                      5 => 'Emergency',
+                      _ => 'Unknown',
+                    },
+                    onChanged: (value) {
+                      setState(() {
+                        currentUrgency = value.round();
+                      });
+                    },
+                  ),
+                  SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        switch(currentUrgency) {
+                          5 => Icons.warning,
+                          4 => Icons.priority_high,
+                          3 => Icons.local_fire_department,
+                          2 => Icons.list_alt,
+                          1 => Icons.note,
+                          _ => Icons.help,
+                        },
+                        color: switch(currentUrgency) {
+                          5 => Colors.red[900],
+                          4 => Colors.red[700],
+                          3 => Colors.orange[700],
+                          2 => Colors.blue[600],
+                          1 => Colors.grey[600],
+                          _ => Colors.grey[600],
+                        },
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          switch(currentUrgency) {
+                            5 => 'Emergency - Overdue, critical need',
+                            4 => 'Critical - Overdue, high importance',
+                            3 => 'High - Due for purchase',
+                            2 => 'Medium - Approaching purchase time',
+                            1 => 'Low - Recently purchased',
+                            _ => 'Unknown priority level',
+                          },
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 15),
+                  CheckboxListTile(
+                    title: Text('Enable notifications'),
+                    subtitle: Text('Get reminders for this item'),
+                    value: notificationEnabled,
+                    onChanged: (value) {
+                      setState(() {
+                        notificationEnabled = value ?? true;
+                      });
+                    },
+                    dense: true,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    _updateItemUrgency(item, currentUrgency, notificationEnabled);
+                    Navigator.pop(context);
+                  },
+                  child: Text('Update Priority'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _updateItemUrgency(Map<String, dynamic> item, int urgencyLevel, bool notificationEnabled) async {
+    try {
+      final client = HttpClient()
+        ..badCertificateCallback = ((cert, host, port) => true);
+      final ioClient = IOClient(client);
+      
+      final response = await ioClient.put(
+        Uri.parse('$baseUrl/urgency/items/${item['name']}/${item['category']}/${item['user_id']}'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'urgency_level': urgencyLevel,
+          'notification_enabled': notificationEnabled,
+        }),
+      ).timeout(Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Priority updated for ${item['name']}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        fetchItems(); // Refresh the list
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Failed to update priority'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error updating priority: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _showDeleteConfirmation(Map<String, dynamic> item) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1748,7 +1938,11 @@ class _PantryListState extends State<PantryList> {
                 itemBuilder: (context, index) {
                   final item = _getFilteredItems()[index];
                   final category = item['category'] as String? ?? 'Vegetables';
+                  final urgencyLevel = item['urgency_level'] as int? ?? 3;
+                  final frequency = item['frequency'] as int? ?? 0;
+                  final isManualOverride = item['is_manual_override'] == 1;
                   
+                  // Category-based color coding (back to original system)
                   final Color itemColor = switch(category.toLowerCase().trim()) {
                     'vegetables' => Color(0xFFBEDFBF),  // More opaque green
                     'fruits' => Color(0xFFA8D5AA),      // More opaque darker green
@@ -1763,6 +1957,25 @@ class _PantryListState extends State<PantryList> {
                     'cleaning' => Color(0xFFE0E0E0),    // More opaque gray
                     'other' => Color(0xFFEEEEEE),       // More opaque light gray
                     _ => Colors.white,
+                  };
+                  
+                  // Priority icons based on urgency (keep the icons)
+                  final IconData? priorityIcon = switch(urgencyLevel) {
+                    5 => Icons.warning,          // Emergency 🚨
+                    4 => Icons.priority_high,    // Critical ⚠️
+                    3 => Icons.local_fire_department, // High 🔥
+                    2 => Icons.list_alt,         // Medium 📋
+                    1 => Icons.note,             // Low 📝
+                    _ => null,
+                  };
+                  
+                  final Color priorityIconColor = switch(urgencyLevel) {
+                    5 => Colors.red[900]!,       // Emergency - Dark red
+                    4 => Colors.red[700]!,       // Critical - Red
+                    3 => Colors.orange[700]!,    // High - Orange
+                    2 => Colors.blue[600]!,      // Medium - Blue
+                    1 => Colors.grey[600]!,      // Low - Gray
+                    _ => Colors.grey[600]!,
                   };
 
                   return Container(
@@ -1903,22 +2116,60 @@ class _PantryListState extends State<PantryList> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ListTile(
-                            leading: Checkbox(
-                              value: item['checked'] == 1,
-                              onChanged: (bool? value) {
-                                HapticFeedback.selectionClick();
-                                toggleItem(item['id'], value ?? false);
-                              },
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (priorityIcon != null) ...[
+                                  Icon(
+                                    priorityIcon,
+                                    color: priorityIconColor,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 4),
+                                ],
+                                Checkbox(
+                                  value: item['checked'] == 1,
+                                  onChanged: (bool? value) {
+                                    HapticFeedback.selectionClick();
+                                    toggleItem(item['id'], value ?? false);
+                                  },
+                                ),
+                              ],
                             ),
-                            title: Text(
-                              '${item['name']} (${item['quantity']} × ${item['amount_per_item'] ?? ''} ${item['metric'] ?? ''}) (${item['category']})',
-                              style: TextStyle(
-                                decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
-                              ),
+                            title: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${item['name']} (${item['quantity']} × ${item['amount_per_item'] ?? ''} ${item['metric'] ?? ''}) (${item['category']})',
+                                  style: TextStyle(
+                                    decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
+                                  ),
+                                ),
+                                if (frequency > 0) ...[
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Purchased ${frequency} times${isManualOverride ? ' • Manual priority' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: Icon(Icons.trending_up, 
+                                    color: priorityIconColor,
+                                  ),
+                                  onPressed: () {
+                                    HapticFeedback.lightImpact();
+                                    _showUrgencyDialog(item);
+                                  },
+                                  tooltip: 'Adjust Priority',
+                                ),
                                 IconButton(
                                   icon: Icon(Icons.edit),
                                   onPressed: () {
