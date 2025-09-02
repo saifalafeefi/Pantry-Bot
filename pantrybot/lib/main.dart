@@ -13,10 +13,119 @@ import 'screens/pantry_items_screen.dart';
 import 'screens/admin_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/recipes_screen.dart';
+import 'screens/urgency_screen.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 // Removed updraft_config.dart - not needed for current implementation
 
 // API base URL
 const String baseUrl = 'https://pantrybot.anonstorage.org:8443';
+
+// Global notification plugin instance
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
+    FlutterLocalNotificationsPlugin();
+
+class NotificationService {
+  static Future<void> initialize() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    
+    const DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+    
+    const InitializationSettings initializationSettings =
+        InitializationSettings(
+          android: initializationSettingsAndroid,
+          iOS: initializationSettingsIOS,
+        );
+    
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+    
+    // Request Android 13+ notification permission
+    if (Platform.isAndroid) {
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+    }
+  }
+  
+  static Future<bool> areNotificationsEnabled() async {
+    if (Platform.isAndroid) {
+      final androidPlugin = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      return await androidPlugin?.areNotificationsEnabled() ?? false;
+    }
+    return true; // iOS handles this differently
+  }
+  
+  static Future<void> showTestNotification() async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+          'pantrybot_test',
+          'PantryBot Test',
+          channelDescription: 'Test notifications from PantryBot',
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        );
+    
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        );
+    
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+    
+    await flutterLocalNotificationsPlugin.show(
+      0,
+      '🤖 PantryBot Test',
+      'Notifications are working! You\'ll get alerts for important grocery items.',
+      platformChannelSpecifics,
+    );
+  }
+  
+  static Future<void> showGroceryReminder(String itemName, String urgencyLevel) async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+          'pantrybot_grocery',
+          'Grocery Reminders',
+          channelDescription: 'Reminders for important grocery items',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        );
+    
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        );
+    
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+    
+    await flutterLocalNotificationsPlugin.show(
+      DateTime.now().millisecondsSinceEpoch % 100000, // Unique ID
+      '🛒 Grocery Reminder',
+      '$itemName ($urgencyLevel priority) - Don\'t forget to buy this!',
+      platformChannelSpecifics,
+    );
+  }
+}
 
 const Map<String, List<String>> categoryMetrics = {
   'Dairy': ['Litre', 'ml', 'Piece', 'Pack'],
@@ -49,10 +158,13 @@ enum SortOption {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Initialize notifications
+  await NotificationService.initialize();
+  
   // Android: Pi server OTA, iOS: Updraft distribution
   print('OTA update capability enabled - Android: Pi server, iOS: Updraft');
   
-  print('PantryBot starting up - version 1.5.0 build 26');
+  print('PantryBot starting up - version 1.6.2 build 28');
   
   // Load saved login state from SharedPreferences
   final prefs = await SharedPreferences.getInstance();
@@ -168,12 +280,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   @override
   void initState() {
     super.initState();
-    // Check for updates after the widget is built (Android only)
-    if (Platform.isAndroid) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Check for updates and notifications after the widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (Platform.isAndroid) {
         _checkForUpdatesAutomatically();
-      });
-    }
+      }
+      _checkNotificationPermission();
+    });
   }
   
   // Platform-specific update initialization
@@ -306,6 +419,136 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     );
   }
 
+  Future<void> _checkNotificationPermission() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Check if user has already made a decision
+      final notificationsEnabled = prefs.getBool('notifications_enabled');
+      final dontShowAgain = prefs.getBool('notifications_dont_show_again') ?? false;
+      
+      // If user already pressed Enable or Don't Show Again, never show popup
+      if (dontShowAgain || notificationsEnabled == true) {
+        return;
+      }
+      
+      // Show popup only if user hasn't seen it before or chose "remind me later"
+      _showNotificationPermissionDialog();
+      
+    } catch (e) {
+      print('Error checking notification permission: $e');
+    }
+  }
+
+  Future<void> _showNotificationPermissionDialog() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.notifications, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Enable Notifications'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Get notified about your grocery list items and pantry updates!'),
+              SizedBox(height: 16),
+              Text('• Frequent item reminders', style: TextStyle(fontSize: 14)),
+              Text('• Priority item alerts', style: TextStyle(fontSize: 14)),
+              Text('• Pantry expiration warnings', style: TextStyle(fontSize: 14)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: Text('Remind Me Later'),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                // Don't save any preference - will show again next time
+              },
+            ),
+            TextButton(
+              child: Text('Don\'t Show Again'),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('notifications_dont_show_again', true);
+                await prefs.setBool('notifications_enabled', false);
+              },
+            ),
+            ElevatedButton(
+              child: Text('Enable'),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _requestNotificationPermission();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // For Android, always mark as handled when user presses Enable
+      // The openAppSettings() will redirect to system settings
+      await prefs.setBool('notifications_enabled', true);
+      await prefs.setBool('notifications_dont_show_again', true);
+      
+      // Always redirect to app settings for notification permission
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Opening settings to enable notifications...'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+      
+      // Open app settings directly
+      await openAppSettings();
+      
+    } catch (e) {
+      print('Error requesting notification permission: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to open settings'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showSettingsRedirectDialog() async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Open Settings'),
+          content: Text('To enable notifications, please go to your device Settings > Apps > PantryBot > Permissions > Notifications.'),
+          actions: [
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              child: Text('Open Settings'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                openAppSettings();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _showAboutDialog() async {
     // Get current app version dynamically
     final packageInfo = await PackageInfo.fromPlatform();
@@ -336,16 +579,8 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               SizedBox(height: 8),
               Text('Manage your pantry, grocery lists, and recipes with ease!'),
               SizedBox(height: 16),
-              Text('🆕 NEW: Automatic OTA Updates!', 
-                   style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-              SizedBox(height: 4),
-              Text(Platform.isAndroid 
-                ? '📱 Android: Pi server OTA enabled' 
-                : '🍎 iOS: Updraft distribution ready',
-                style: TextStyle(color: Colors.blue, fontSize: 12)),
-              SizedBox(height: 8),
-              Text('🌙 NEW: Dark Mode Available!', 
-                   style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold)),
+              Text('App developed by Saif Alafeefi.',
+                   style: TextStyle(color: Colors.grey[600], fontSize: 14)),
             ],
           ),
           actions: [
@@ -549,6 +784,47 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       SizedBox(width: 15),
                       Text(
                         'Recipes',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              SizedBox(height: 20),
+              
+              // Priority Manager Button
+              SizedBox(
+                width: double.infinity,
+                height: 80,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => UrgencyScreen(
+                          userId: widget.userId,
+                          username: widget.username,
+                          isAdmin: widget.isAdmin,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.priority_high, size: 32),
+                      SizedBox(width: 15),
+                      Text(
+                        'Priority Manager',
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -1377,6 +1653,154 @@ class _PantryListState extends State<PantryList> {
     );
   }
 
+  void _showUrgencyDialog(Map<String, dynamic> item) {
+    int currentUrgency = item['urgency_level'] as int? ?? 3;
+    bool notificationEnabled = item['notification_enabled'] != 0;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Adjust Priority: ${item['name']}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Current Priority: Level $currentUrgency'),
+                  SizedBox(height: 20),
+                  Text('Priority Level'),
+                  Slider(
+                    value: currentUrgency.toDouble(),
+                    min: 1,
+                    max: 5,
+                    divisions: 4,
+                    label: switch(currentUrgency) {
+                      1 => 'Low',
+                      2 => 'Medium',
+                      3 => 'High',
+                      4 => 'Critical',
+                      5 => 'Emergency',
+                      _ => 'Unknown',
+                    },
+                    onChanged: (value) {
+                      setState(() {
+                        currentUrgency = value.round();
+                      });
+                    },
+                  ),
+                  SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        switch(currentUrgency) {
+                          5 => Icons.warning,
+                          4 => Icons.priority_high,
+                          3 => Icons.local_fire_department,
+                          2 => Icons.list_alt,
+                          1 => Icons.note,
+                          _ => Icons.help,
+                        },
+                        color: switch(currentUrgency) {
+                          5 => Colors.red[900],
+                          4 => Colors.red[700],
+                          3 => Colors.orange[700],
+                          2 => Colors.blue[600],
+                          1 => Colors.grey[600],
+                          _ => Colors.grey[600],
+                        },
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          switch(currentUrgency) {
+                            5 => 'Emergency - Overdue, critical need',
+                            4 => 'Critical - Overdue, high importance',
+                            3 => 'High - Due for purchase',
+                            2 => 'Medium - Approaching purchase time',
+                            1 => 'Low - Recently purchased',
+                            _ => 'Unknown priority level',
+                          },
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 15),
+                  CheckboxListTile(
+                    title: Text('Enable notifications'),
+                    subtitle: Text('Get reminders for this item'),
+                    value: notificationEnabled,
+                    onChanged: (value) {
+                      setState(() {
+                        notificationEnabled = value ?? true;
+                      });
+                    },
+                    dense: true,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    _updateItemUrgency(item, currentUrgency, notificationEnabled);
+                    Navigator.pop(context);
+                  },
+                  child: Text('Update Priority'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _updateItemUrgency(Map<String, dynamic> item, int urgencyLevel, bool notificationEnabled) async {
+    try {
+      final client = HttpClient()
+        ..badCertificateCallback = ((cert, host, port) => true);
+      final ioClient = IOClient(client);
+      
+      final response = await ioClient.put(
+        Uri.parse('$baseUrl/urgency/items/${item['name']}/${item['category']}/${item['user_id']}'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'urgency_level': urgencyLevel,
+          'notification_enabled': notificationEnabled,
+        }),
+      ).timeout(Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Priority updated for ${item['name']}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        fetchItems(); // Refresh the list
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Failed to update priority'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error updating priority: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _showDeleteConfirmation(Map<String, dynamic> item) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1479,26 +1903,94 @@ class _PantryListState extends State<PantryList> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Get notified when your pantry items are about to expire!'),
+                  Text('Get notified about important grocery items and reminders!'),
                   SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () async {
-                      print('Test notification - iOS compatible mode');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Test notification sent!')),
+                  FutureBuilder<bool>(
+                    future: NotificationService.areNotificationsEnabled(),
+                    builder: (context, snapshot) {
+                      final isEnabled = snapshot.data ?? false;
+                      return Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isEnabled ? Icons.check_circle : Icons.error,
+                                color: isEnabled ? Colors.green : Colors.red,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                isEnabled ? 'Notifications Enabled' : 'Notifications Disabled',
+                                style: TextStyle(
+                                  color: isEnabled ? Colors.green : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 16),
+                        ],
                       );
                     },
-                    child: Text('Test Notifications'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        await NotificationService.showTestNotification();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ Test notification sent!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('❌ Failed to send notification: Enable notifications in Settings first'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text('Send Test Notification'),
                   ),
                   SizedBox(height: 10),
                   ElevatedButton(
                     onPressed: () async {
-                      print('Check expiring items - iOS compatible mode');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Checked for expiring pantry items!')),
-                      );
+                      // Send sample grocery reminder
+                      try {
+                        await NotificationService.showGroceryReminder('Milk', 'High');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ Sample grocery reminder sent!'),
+                            backgroundColor: Colors.blue,
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('❌ Failed to send reminder: Enable notifications in Settings first'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     },
-                    child: Text('Check Expiring Items'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text('Test Grocery Reminder'),
+                  ),
+                  SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      openAppSettings();
+                    },
+                    child: Text('Open System Settings'),
                   ),
                 ],
               ),
@@ -1748,7 +2240,11 @@ class _PantryListState extends State<PantryList> {
                 itemBuilder: (context, index) {
                   final item = _getFilteredItems()[index];
                   final category = item['category'] as String? ?? 'Vegetables';
+                  final urgencyLevel = item['urgency_level'] as int? ?? 3;
+                  final frequency = item['frequency'] as int? ?? 0;
+                  final isManualOverride = item['is_manual_override'] == 1;
                   
+                  // Category-based color coding (back to original system)
                   final Color itemColor = switch(category.toLowerCase().trim()) {
                     'vegetables' => Color(0xFFBEDFBF),  // More opaque green
                     'fruits' => Color(0xFFA8D5AA),      // More opaque darker green
@@ -1763,6 +2259,25 @@ class _PantryListState extends State<PantryList> {
                     'cleaning' => Color(0xFFE0E0E0),    // More opaque gray
                     'other' => Color(0xFFEEEEEE),       // More opaque light gray
                     _ => Colors.white,
+                  };
+                  
+                  // Priority icons based on urgency (keep the icons)
+                  final IconData? priorityIcon = switch(urgencyLevel) {
+                    5 => Icons.warning,          // Emergency 🚨
+                    4 => Icons.priority_high,    // Critical ⚠️
+                    3 => Icons.local_fire_department, // High 🔥
+                    2 => Icons.list_alt,         // Medium 📋
+                    1 => Icons.note,             // Low 📝
+                    _ => null,
+                  };
+                  
+                  final Color priorityIconColor = switch(urgencyLevel) {
+                    5 => Colors.red[900]!,       // Emergency - Dark red
+                    4 => Colors.red[700]!,       // Critical - Red
+                    3 => Colors.orange[700]!,    // High - Orange
+                    2 => Colors.blue[600]!,      // Medium - Blue
+                    1 => Colors.grey[600]!,      // Low - Gray
+                    _ => Colors.grey[600]!,
                   };
 
                   return Container(
@@ -1903,22 +2418,60 @@ class _PantryListState extends State<PantryList> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ListTile(
-                            leading: Checkbox(
-                              value: item['checked'] == 1,
-                              onChanged: (bool? value) {
-                                HapticFeedback.selectionClick();
-                                toggleItem(item['id'], value ?? false);
-                              },
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (priorityIcon != null) ...[
+                                  Icon(
+                                    priorityIcon,
+                                    color: priorityIconColor,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 4),
+                                ],
+                                Checkbox(
+                                  value: item['checked'] == 1,
+                                  onChanged: (bool? value) {
+                                    HapticFeedback.selectionClick();
+                                    toggleItem(item['id'], value ?? false);
+                                  },
+                                ),
+                              ],
                             ),
-                            title: Text(
-                              '${item['name']} (${item['quantity']} × ${item['amount_per_item'] ?? ''} ${item['metric'] ?? ''}) (${item['category']})',
-                              style: TextStyle(
-                                decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
-                              ),
+                            title: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${item['name']} (${item['quantity']} × ${item['amount_per_item'] ?? ''} ${item['metric'] ?? ''}) (${item['category']})',
+                                  style: TextStyle(
+                                    decoration: item['checked'] == 1 ? TextDecoration.lineThrough : null,
+                                  ),
+                                ),
+                                if (frequency > 0) ...[
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Purchased ${frequency} times${isManualOverride ? ' • Manual priority' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: Icon(Icons.trending_up, 
+                                    color: priorityIconColor,
+                                  ),
+                                  onPressed: () {
+                                    HapticFeedback.lightImpact();
+                                    _showUrgencyDialog(item);
+                                  },
+                                  tooltip: 'Adjust Priority',
+                                ),
                                 IconButton(
                                   icon: Icon(Icons.edit),
                                   onPressed: () {

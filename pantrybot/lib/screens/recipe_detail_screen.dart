@@ -4,6 +4,7 @@ import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'edit_recipe_screen.dart';
+import '../main.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final int recipeId;
@@ -174,6 +175,69 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     } else {
       return name;
     }
+  }
+
+  Future<void> _addToGroceryList(Map<String, dynamic> ingredient) async {
+    try {
+      // Create HTTP client with SSL bypass
+      final client = HttpClient()..badCertificateCallback = ((cert, host, port) => true);
+      final ioClient = IOClient(client);
+
+      // Prepare grocery item data
+      final groceryItem = {
+        'name': ingredient['name'],
+        'quantity': (ingredient['quantity'] ?? 1.0).round(),
+        'category': 'Other', // Default category - could be improved with categorization logic
+        'metric': ingredient['unit'] == 'Piece' ? null : ingredient['unit'],
+        'amount_per_item': null,
+        'user_id': widget.userId,
+      };
+
+      final response = await ioClient.post(
+        Uri.parse('$baseUrl/grocery/items'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(groceryItem),
+      ).timeout(Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ ${ingredient['name']} added to grocery list!'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'View List',
+              textColor: Colors.white,
+              onPressed: () {
+                // Navigate to grocery list - need to import and navigate
+                _navigateToGroceryList();
+              },
+            ),
+          ),
+        );
+      } else {
+        throw Exception('Failed to add item: ${response.statusCode}');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error adding to grocery list: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _navigateToGroceryList() {
+    // Navigate directly to grocery list screen
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => PantryList(
+          isAdmin: false, // We don't have admin status from recipe screen
+          userId: widget.userId,
+          username: '', // We don't have username from recipe screen
+        ),
+      ),
+    );
   }
 
   @override
@@ -348,12 +412,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                                 if (ingredientStatus['status'] == 'unavailable')
                                   IconButton(
                                     icon: Icon(Icons.add_shopping_cart, color: Colors.blue),
-                                    onPressed: () {
-                                      // TODO: Add to grocery list functionality
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Add to grocery list feature coming soon!')),
-                                      );
-                                    },
+                                    onPressed: () => _addToGroceryList(ingredient),
                                     tooltip: 'Add to grocery list',
                                   ),
                               ],
